@@ -1,0 +1,27 @@
+name: InlineRewriter
+options:
+  bundleIdPrefix: com.kevinTame
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""
+    MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+targets:
+  InlineRewriter:
+    type: application
+    platform: macOS
+    deploymentTarget: "12.0"
+    sources:
+      - App
+      - Core
+      - Features
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kevinTame.InlineRewriter
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_ENTITLEMENTS: InlineRewriter.entitlements
+    dependencies:
+      - framework: Foundation.framework
+      - framework: Cocoa.framework
+      - framework: SwiftUI.framework
+      - framework: AppKit.framework
