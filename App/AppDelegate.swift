@@ -70,8 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleHotkey() {
         Task { @MainActor in
             do {
-                // 1) Try to copy selection (simulates ⌘C)
-                try container.pasteboardService.copySelectionToPasteboard()
+                // 1) Try to copy selection (simulates ⌘C) and backup original clipboard
+                let backup = try container.pasteboardService.copySelectionToPasteboard()
 
                 // 2) Read plain text from pasteboard
                 guard let input = container.pasteboardService.readStringFromPasteboard(), !input.isEmpty else {
@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                showTransformationPicker(for: input)
+                showTransformationPicker(for: input, backup: backup)
             } catch {
                 container.alertPresenter.showError(title: "Permission required", message: error.localizedDescription)
             }
@@ -87,11 +87,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func showTransformationPicker(for input: String) {
+    private func showTransformationPicker(for input: String, backup: PasteboardService.PasteboardBackup?) {
         let viewModel = TransformationPickerViewModel(
             inputText: input,
             settings: container.settingsStore,
-            transformer: container.textTransformer
+            transformer: container.textTransformer,
+            pasteboardBackup: backup
         )
 
         viewModel.onCancel = { [weak self] in
@@ -100,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewModel.onDidTransform = { [weak self] result, retry in
             self?.transformationPopover.performClose(nil)
-            self?.showPreview(input: input, output: result, retry: retry)
+            self?.showPreview(input: input, output: result, backup: viewModel.pasteboardBackup, retry: retry)
         }
 
         transformationPopover.contentViewController = NSHostingController(
@@ -111,12 +112,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func showPreview(input: String, output: String, retry: @escaping () -> Void) {
+    private func showPreview(input: String, output: String, backup: PasteboardService.PasteboardBackup?, retry: @escaping () -> Void) {
         let viewModel = PreviewViewModel(
             inputText: input,
             outputText: output,
             pasteboardService: container.pasteboardService,
-            alertPresenter: container.alertPresenter
+            alertPresenter: container.alertPresenter,
+            pasteboardBackup: backup
         )
 
         viewModel.onCancel = { [weak self] in

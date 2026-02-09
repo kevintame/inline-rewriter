@@ -11,13 +11,20 @@ final class OpenAIClient {
     private let settings: SettingsStore
     private let keychain: KeychainStoring
 
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30.0  // 30 seconds per request
+        config.timeoutIntervalForResource = 60.0 // 60 seconds total
+        return URLSession(configuration: config)
+    }()
+
     init(settings: SettingsStore, keychain: KeychainStoring) {
         self.settings = settings
         self.keychain = keychain
     }
 
     func complete(prompt: String) async throws -> String {
-        let apiKey = try keychain.readString(account: Accounts.openAIKey) ?? ""
+        let apiKey = try keychain.readString(account: AppConstants.KeychainAccounts.openAIKey) ?? ""
         guard !apiKey.isEmpty else { throw OpenAIError.missingAPIKey }
 
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
@@ -35,7 +42,13 @@ final class OpenAIClient {
         )
         request.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let error as NSError where error.code == NSURLErrorTimedOut {
+            throw OpenAIError.timeout
+        }
+
         guard let http = response as? HTTPURLResponse else { throw OpenAIError.invalidResponse }
 
         if !(200...299).contains(http.statusCode) {
@@ -50,10 +63,6 @@ final class OpenAIClient {
         let text = decoded.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if text.isEmpty { throw OpenAIError.emptyResult }
         return text
-    }
-
-    private enum Accounts {
-        static let openAIKey = "openai_api_key"
     }
 }
 
@@ -98,6 +107,7 @@ enum OpenAIError: LocalizedError {
     case api(message: String)
     case invalidResponse
     case emptyResult
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -111,6 +121,8 @@ enum OpenAIError: LocalizedError {
             return "Invalid response from OpenAI."
         case .emptyResult:
             return "OpenAI returned an empty result."
+        case .timeout:
+            return "Request timed out. Please check your network connection and try again."
         }
     }
 }

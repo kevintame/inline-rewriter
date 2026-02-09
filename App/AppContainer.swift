@@ -15,7 +15,7 @@ final class AppContainer {
 
     init() {
         self.settingsStore = SettingsStore()
-        self.keychain = KeychainStore(service: "com.kevinTame.InlineRewriter")
+        self.keychain = KeychainStore(service: AppConstants.keychainService)
 
         self.alertPresenter = AlertPresenter()
         self.pasteboardService = PasteboardService()

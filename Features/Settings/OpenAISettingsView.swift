@@ -40,7 +40,7 @@ struct OpenAISettingsView: View {
 
     private func load() {
         do {
-            apiKey = try keychain.readString(account: "openai_api_key") ?? ""
+            apiKey = try keychain.readString(account: AppConstants.KeychainAccounts.openAIKey) ?? ""
             statusText = "Loaded"
         } catch {
             statusText = "Load failed"
@@ -57,7 +57,7 @@ struct OpenAISettingsView: View {
         }
 
         do {
-            try keychain.writeString(trimmed, account: "openai_api_key")
+            try keychain.writeString(trimmed, account: AppConstants.KeychainAccounts.openAIKey)
             apiKey = trimmed
             statusText = "Saved"
         } catch {
@@ -68,7 +68,7 @@ struct OpenAISettingsView: View {
 
     private func clear() {
         do {
-            try keychain.delete(account: "openai_api_key")
+            try keychain.delete(account: AppConstants.KeychainAccounts.openAIKey)
             apiKey = ""
             statusText = "Cleared"
         } catch {

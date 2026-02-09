@@ -6,6 +6,7 @@ struct TransformationsSettingsView: View {
     @State private var selection: TextTransformation.ID?
     @State private var draftName: String = ""
     @State private var draftPrompt: String = ""
+    @State private var validationError: String?
 
     var body: some View {
         HStack(spacing: 16) {
@@ -40,6 +41,12 @@ struct TransformationsSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                if let validationError {
+                    Text(validationError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
                 HStack {
                     Spacer()
                     Button("Save") { save() }
@@ -59,10 +66,12 @@ struct TransformationsSettingsView: View {
               let t = settings.transformations.first(where: { $0.id == selection }) else {
             draftName = ""
             draftPrompt = ""
+            validationError = nil
             return
         }
         draftName = t.name
         draftPrompt = t.promptTemplate
+        validationError = nil
     }
 
     private func add() {
@@ -80,8 +89,22 @@ struct TransformationsSettingsView: View {
             return
         }
 
-        settings.transformations[idx].name = draftName
-        settings.transformations[idx].promptTemplate = draftPrompt
+        // Create temporary transformation to validate
+        let temp = TextTransformation(
+            id: settings.transformations[idx].id,
+            name: draftName,
+            promptTemplate: draftPrompt,
+            isPreset: false
+        )
+
+        do {
+            try temp.validate()
+            validationError = nil
+            settings.transformations[idx].name = draftName
+            settings.transformations[idx].promptTemplate = draftPrompt
+        } catch {
+            validationError = error.localizedDescription
+        }
     }
 
     private func delete(at offsets: IndexSet) {

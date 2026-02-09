@@ -21,6 +21,29 @@ struct TextTransformation: Identifiable, Codable, Equatable {
         promptTemplate.replacingOccurrences(of: "{{text}}", with: text)
     }
 
+    func validate() throws {
+        guard promptTemplate.contains("{{text}}") else {
+            throw ValidationError.missingPlaceholder
+        }
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ValidationError.emptyName
+        }
+    }
+
+    enum ValidationError: LocalizedError {
+        case missingPlaceholder
+        case emptyName
+
+        var errorDescription: String? {
+            switch self {
+            case .missingPlaceholder:
+                return "Prompt template must contain {{text}} placeholder."
+            case .emptyName:
+                return "Transformation name cannot be empty."
+            }
+        }
+    }
+
     static let presetRewrite = TextTransformation(
         name: "Rewrite",
         promptTemplate: "Rewrite the following text to be clearer and more concise, preserving meaning:\n\n{{text}}",

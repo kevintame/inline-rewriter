@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// App settings backed by UserDefaults.
 ///
@@ -8,6 +9,7 @@ import Foundation
 /// - Hotkey binding
 final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Settings")
 
     @Published var transformations: [TextTransformation] {
         didSet { saveTransformations() }
@@ -44,8 +46,9 @@ final class SettingsStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(transformations)
             defaults.set(data, forKey: Keys.transformations)
+            _ = defaults.synchronize()
         } catch {
-            // In scaffolding, ignore; in prod, log/report.
+            logger.error("Failed to save transformations: \(error.localizedDescription)")
         }
     }
 
@@ -53,7 +56,9 @@ final class SettingsStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(hotkey)
             defaults.set(data, forKey: Keys.hotkey)
+            _ = defaults.synchronize()
         } catch {
+            logger.error("Failed to save hotkey: \(error.localizedDescription)")
         }
     }
 

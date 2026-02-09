@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class TransformationPickerViewModel: ObservableObject {
     let inputText: String
+    let pasteboardBackup: PasteboardService.PasteboardBackup?
 
     @Published var isBusy: Bool = false
     @Published var errorMessage: String?
@@ -17,10 +18,11 @@ final class TransformationPickerViewModel: ObservableObject {
     /// Provides output + a retry closure.
     var onDidTransform: ((String, @escaping () -> Void) -> Void)?
 
-    init(inputText: String, settings: SettingsStore, transformer: TextTransformer) {
+    init(inputText: String, settings: SettingsStore, transformer: TextTransformer, pasteboardBackup: PasteboardService.PasteboardBackup?) {
         self.inputText = inputText
         self.settings = settings
         self.transformer = transformer
+        self.pasteboardBackup = pasteboardBackup
     }
 
     var transformations: [TextTransformation] {
