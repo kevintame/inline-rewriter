@@ -2,7 +2,30 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(swiftc:*)",
+      "Bash(open:*)",
+      "Bash(sw_vers:*)",
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:steipete.me)",
+      "Bash(ls:*)",
+      "Bash(log stream:*)",
+      "Bash(log show:*)",
+      "Bash(git log:*)",
+      "Bash(swift build:*)",
+      "Bash(python3:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(brew install:*)",
+      "Bash(xcodegen generate:*)",
+      "Bash(xcode-select:*)",
+      "Bash(sudo xcode-select:*)",
+      "Bash(plutil -lint:*)",
+      "Bash(mdfind:*)",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)"
     ]
   }
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import os.log
+import ApplicationServices
 
 /// Global (and local) keyboard event monitor.
 ///
@@ -25,13 +26,25 @@ final class HotkeyManager {
 
         logger.info("Starting hotkey manager with hotkey: \(self.settings.hotkey.keyCode)")
 
+        // Check Accessibility permissions explicitly
+        let hasAccessibility = AXIsProcessTrusted()
+        logger.info("Accessibility permission status: \(hasAccessibility)")
+        if !hasAccessibility {
+            logger.warning("Accessibility permission not granted - global hotkey monitoring may not work")
+        }
+
         var localMonitorCreated = false
         var globalMonitorCreated = false
 
         // Local monitor helps when app is active.
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+
+            // DEBUG: Log every keyDown event received by local monitor
+            self.logger.debug("Local monitor: keyDown event - keyCode: \(event.keyCode), flags: \(event.modifierFlags.rawValue)")
+
             if self.matchesHotkey(event) {
+                self.logger.info("✓ Local hotkey matched! Triggering callback...")
                 self.onHotkey?()
                 return nil
             }
@@ -43,7 +56,12 @@ final class HotkeyManager {
         // May return nil if accessibility permissions are not granted.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return }
+
+            // DEBUG: Log every keyDown event received by global monitor
+            self.logger.debug("Global monitor: keyDown event - keyCode: \(event.keyCode), flags: \(event.modifierFlags.rawValue)")
+
             if self.matchesHotkey(event) {
+                self.logger.info("✓ Global hotkey matched! Triggering callback...")
                 self.onHotkey?()
             }
         }
@@ -55,7 +73,11 @@ final class HotkeyManager {
         } else {
             logger.error("Failed to start hotkey manager - Local: \(localMonitorCreated), Global: \(globalMonitorCreated)")
             if !globalMonitorCreated {
-                logger.error("Global monitor creation failed - check Accessibility permissions")
+                logger.error("Global monitor creation failed - Input Monitoring permission may be required")
+                logger.error("Check: System Settings → Privacy & Security → Input Monitoring")
+            }
+            if !localMonitorCreated {
+                logger.error("Local monitor creation failed - this is very unusual and may indicate a system issue")
             }
             stop() // Clean up partial initialization
         }
@@ -83,6 +105,15 @@ final class HotkeyManager {
         let relevant: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
         let eventFlags = event.modifierFlags.intersection(relevant)
 
-        return event.keyCode == UInt16(hotkey.keyCode) && eventFlags == expectedFlags
+        let keyCodeMatches = event.keyCode == UInt16(hotkey.keyCode)
+        let flagsMatch = eventFlags == expectedFlags
+
+        // DEBUG: Log comparison details
+        logger.debug("Hotkey match check:")
+        logger.debug("  Expected: keyCode=\(hotkey.keyCode), flags=\(expectedFlags.rawValue)")
+        logger.debug("  Received: keyCode=\(event.keyCode), flags=\(eventFlags.rawValue)")
+        logger.debug("  KeyCode match: \(keyCodeMatches), Flags match: \(flagsMatch)")
+
+        return keyCodeMatches && flagsMatch
     }
 }

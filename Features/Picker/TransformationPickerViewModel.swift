@@ -8,6 +8,7 @@ final class TransformationPickerViewModel: ObservableObject {
 
     @Published var isBusy: Bool = false
     @Published var errorMessage: String?
+    @Published var selectedIndex: Int = 0
 
     private let settings: SettingsStore
     private let transformer: TextTransformer
@@ -42,7 +43,7 @@ final class TransformationPickerViewModel: ObservableObject {
                 let output = try await transformer.run(transformation: transformation, input: inputText)
                 isBusy = false
 
-                let retry = { [weak self] in
+                let retry: () -> Void = { [weak self] in
                     self?.run(transformation)
                 }
                 onDidTransform?(output, retry)
@@ -51,5 +52,18 @@ final class TransformationPickerViewModel: ObservableObject {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
             }
         }
+    }
+
+    func selectNext() {
+        selectedIndex = min(selectedIndex + 1, transformations.count - 1)
+    }
+
+    func selectPrevious() {
+        selectedIndex = max(selectedIndex - 1, 0)
+    }
+
+    func runSelected() {
+        guard transformations.indices.contains(selectedIndex) else { return }
+        run(transformations[selectedIndex])
     }
 }

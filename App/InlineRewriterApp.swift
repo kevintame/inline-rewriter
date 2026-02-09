@@ -7,14 +7,13 @@ struct InlineRewriterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Settings window is declared here so it appears under the app menu.
-        Settings {
-            SettingsRootView(
-                settings: appDelegate.container.settingsStore,
-                keychain: appDelegate.container.keychain,
-                hotkeyManager: appDelegate.container.hotkeyManager,
-                alertPresenter: appDelegate.container.alertPresenter
-            )
+        // No longer needed - using custom SettingsWindowController
+        // Settings scene removed to use NSWindowController for macOS 12.0+ compatibility
+        WindowGroup {
+            EmptyView()
+                .frame(width: 0, height: 0)
+                .hidden()
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }

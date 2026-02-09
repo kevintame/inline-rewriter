@@ -20,8 +20,3 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.kevinTame.InlineRewriter
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_ENTITLEMENTS: InlineRewriter.entitlements
-    dependencies:
-      - framework: Foundation.framework
-      - framework: Cocoa.framework
-      - framework: SwiftUI.framework
-      - framework: AppKit.framework

@@ -14,5 +14,9 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
+    <key>NSEventUsageDescription</key>
+    <string>InlineRewriter needs to monitor keyboard events to detect the global hotkey for text transformation.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>InlineRewriter needs accessibility access to copy and paste text selections in other applications.</string>
 </dict>
 </plist>

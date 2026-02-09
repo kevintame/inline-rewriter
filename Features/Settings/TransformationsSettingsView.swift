@@ -7,6 +7,8 @@ struct TransformationsSettingsView: View {
     @State private var draftName: String = ""
     @State private var draftPrompt: String = ""
     @State private var validationError: String?
+    @State private var transformationToDelete: TextTransformation?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -20,8 +22,23 @@ struct TransformationsSettingsView: View {
 
                 List(selection: $selection) {
                     ForEach(settings.transformations) { t in
-                        Text(t.name)
-                            .tag(t.id)
+                        HStack {
+                            Text(t.name)
+                            Spacer()
+                            if t.isPreset {
+                                Image(systemName: "lock.fill")
+                                    .foregroundStyle(.secondary)
+                                    .help("Built-in transformation (cannot be deleted)")
+                            } else {
+                                Button(action: { deleteTransformation(t) }) {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Delete this transformation")
+                            }
+                        }
+                        .tag(t.id)
                     }
                     .onDelete(perform: delete)
                 }
@@ -55,10 +72,25 @@ struct TransformationsSettingsView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .onChange(of: selection) { _, _ in
+        .onChange(of: selection) { _ in
             loadSelection()
         }
         .onAppear { loadSelection() }
+        .alert("Delete Transformation?", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                if let t = transformationToDelete {
+                    settings.transformations.removeAll { $0.id == t.id }
+                    if selection == t.id {
+                        selection = settings.transformations.first?.id
+                    }
+                }
+            }
+        } message: {
+            if let t = transformationToDelete {
+                Text("Are you sure you want to delete '\(t.name)'? This cannot be undone.")
+            }
+        }
     }
 
     private func loadSelection() {
@@ -75,7 +107,7 @@ struct TransformationsSettingsView: View {
     }
 
     private func add() {
-        var t = TextTransformation(name: "New transformation", promptTemplate: "Do something to this text:\n\n{{text}}")
+        let t = TextTransformation(name: "New transformation", promptTemplate: "Do something to this text:\n\n{{text}}")
         settings.transformations.append(t)
         selection = t.id
     }
@@ -107,14 +139,30 @@ struct TransformationsSettingsView: View {
         }
     }
 
+    private func deleteTransformation(_ transformation: TextTransformation) {
+        guard !transformation.isPreset else { return }
+        transformationToDelete = transformation
+        showDeleteConfirmation = true
+    }
+
     private func delete(at offsets: IndexSet) {
-        // Prevent deleting presets.
-        let idsToDelete = offsets.map { settings.transformations[$0].id }
-        settings.transformations.removeAll { t in
-            idsToDelete.contains(t.id) && !t.isPreset
-        }
-        if let selection, !settings.transformations.contains(where: { $0.id == selection }) {
-            self.selection = settings.transformations.first?.id
+        // Keep existing logic for swipe-to-delete
+        let toDelete = offsets.compactMap {
+            settings.transformations[$0]
+        }.filter { !$0.isPreset }
+
+        guard !toDelete.isEmpty else { return }
+
+        if toDelete.count == 1 {
+            transformationToDelete = toDelete.first
+            showDeleteConfirmation = true
+        } else {
+            // Multiple items - delete without confirmation
+            let idsToDelete = toDelete.map { $0.id }
+            settings.transformations.removeAll { idsToDelete.contains($0.id) }
+            if let selection, !settings.transformations.contains(where: { $0.id == selection }) {
+                self.selection = settings.transformations.first?.id
+            }
         }
     }
 }
