@@ -8,7 +8,7 @@ final class SettingsWindowController: NSWindowController {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -16,6 +16,7 @@ final class SettingsWindowController: NSWindowController {
         window.title = "Inline Rewriter Settings"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 700, height: 500)
 
         super.init(window: window)
     }

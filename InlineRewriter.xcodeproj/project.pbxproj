@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		08C6982E4A4FF77E528C069F /* AlertPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FDCD577DA58BCCF369136 /* AlertPresenter.swift */; };
-		18900A3DCAF4AFB61019629E /* HotkeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A69F548D66C6E90D601D7CF0 /* HotkeySettingsView.swift */; };
 		2DC9BDA537BAFB369C383A00 /* TextTransformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D18CE31054BA9655D312C1D /* TextTransformer.swift */; };
 		324FF74ED56A7651055FFFBA /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F44A9BB3806E49772129CD3 /* PreviewView.swift */; };
 		374EC108FB69887F6EAD599E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D2FCE1DE485EC4C21C85B99 /* KeychainStore.swift */; };
@@ -16,8 +15,6 @@
 		44CE74047345F28E9F9EE1F3 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00E18E28D334C64D0B9DEDB /* SettingsStore.swift */; };
 		4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */; };
 		4D972A4F5DCDBF680F52B363 /* TextPositionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104B42C01F1386B6D256AA06 /* TextPositionService.swift */; };
-		5E1297BFCD4623006886D58A /* OpenAISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124F0B301A67D496757094CA /* OpenAISettingsView.swift */; };
-		6194A4046BB105355E454288 /* TransformationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A2CCA0CA2365E3E05A4F79 /* TransformationsSettingsView.swift */; };
 		7B2225BEA2D97E9F9A7BBC90 /* InlineRewriterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAFA914411372860C302E18 /* InlineRewriterApp.swift */; };
 		84199D83DE39E80AF4F3D7E4 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51A3A6ED713510957BDE153 /* HotkeyManager.swift */; };
 		862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */; };
@@ -25,6 +22,12 @@
 		8CF900E618F100AF47A621A5 /* PasteboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829C2191AC53BFF4CE3B2ADC /* PasteboardService.swift */; };
 		8E7E466AE65517E544294F52 /* TransformationPickerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6DA5E0C2B3B0D6B9E1885B /* TransformationPickerViewModel.swift */; };
 		8EB6A9973AB3D41E713E20EA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64287F5EE4F3ADF78CADC155 /* AppDelegate.swift */; };
+		AA1111110000000000000001 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000001 /* GeneralSettingsView.swift */; };
+		AA1111110000000000000002 /* ModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000002 /* ModelsSettingsView.swift */; };
+		AA1111110000000000000003 /* ProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000003 /* ProviderDetailView.swift */; };
+		AA1111110000000000000004 /* PromptsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000004 /* PromptsSettingsView.swift */; };
+		AA1111110000000000000005 /* PromptEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000005 /* PromptEditSheet.swift */; };
+		AA1111110000000000000006 /* ModelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000006 /* ModelProvider.swift */; };
 		B4F77563258817C95A26AD3B /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2943CC26D767FF88AF3EF5 /* AppContainer.swift */; };
 		BFFFB13AC8CAB875597CB2E1 /* TransformationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2031F595AD52C869901A4027 /* TransformationPickerView.swift */; };
 		DC02E76B2C469264DED88050 /* Hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72CF746873A82B168AFC593 /* Hotkey.swift */; };
@@ -32,13 +35,15 @@
 		EF93EE60ACB235B397F9D913 /* PreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414AB0BCFA9E81DF34189CAF /* PreviewViewModel.swift */; };
 		EFD353BD6DCBBDAA43EAEE16 /* TextTransformation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD4EC8ACB7021E9062D064DB /* TextTransformation.swift */; };
 		F2080851592230184FC5EC6A /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E99B89D6DE5E11E5D754B8 /* AppConstants.swift */; };
+		BB1111110000000000000001 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000001 /* WelcomeView.swift */; };
+		BB1111110000000000000002 /* WelcomeWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000002 /* WelcomeWindowController.swift */; };
+		BB1111110000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000003 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0A6DA5E0C2B3B0D6B9E1885B /* TransformationPickerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationPickerViewModel.swift; sourceTree = "<group>"; };
 		0B2943CC26D767FF88AF3EF5 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		104B42C01F1386B6D256AA06 /* TextPositionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPositionService.swift; sourceTree = "<group>"; };
-		124F0B301A67D496757094CA /* OpenAISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAISettingsView.swift; sourceTree = "<group>"; };
 		1FF6CC5019B72F06EF533C6B /* InlineRewriter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InlineRewriter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2031F595AD52C869901A4027 /* TransformationPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationPickerView.swift; sourceTree = "<group>"; };
 		292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverAnchorWindow.swift; sourceTree = "<group>"; };
@@ -52,15 +57,22 @@
 		8065F16C7518580C5535E785 /* SettingsRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRootView.swift; sourceTree = "<group>"; };
 		829C2191AC53BFF4CE3B2ADC /* PasteboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteboardService.swift; sourceTree = "<group>"; };
 		A51A3A6ED713510957BDE153 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
-		A69F548D66C6E90D601D7CF0 /* HotkeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeySettingsView.swift; sourceTree = "<group>"; };
 		A72CF746873A82B168AFC593 /* Hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hotkey.swift; sourceTree = "<group>"; };
+		AA2222220000000000000001 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
+		AA2222220000000000000002 /* ModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsSettingsView.swift; sourceTree = "<group>"; };
+		AA2222220000000000000003 /* ProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDetailView.swift; sourceTree = "<group>"; };
+		AA2222220000000000000004 /* PromptsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptsSettingsView.swift; sourceTree = "<group>"; };
+		AA2222220000000000000005 /* PromptEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptEditSheet.swift; sourceTree = "<group>"; };
+		AA2222220000000000000006 /* ModelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProvider.swift; sourceTree = "<group>"; };
 		AD4EC8ACB7021E9062D064DB /* TextTransformation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextTransformation.swift; sourceTree = "<group>"; };
 		AF42B77B75EDD93ABF0F331C /* OpenAIModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIModel.swift; sourceTree = "<group>"; };
 		B00E18E28D334C64D0B9DEDB /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
-		B4A2CCA0CA2365E3E05A4F79 /* TransformationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationsSettingsView.swift; sourceTree = "<group>"; };
 		B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
 		DAAFA914411372860C302E18 /* InlineRewriterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRewriterApp.swift; sourceTree = "<group>"; };
 		E0E99B89D6DE5E11E5D754B8 /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
+		BB2222220000000000000001 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000002 /* WelcomeWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowController.swift; sourceTree = "<group>"; };
+		BB2222220000000000000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -72,6 +84,7 @@
 				DAAFA914411372860C302E18 /* InlineRewriterApp.swift */,
 				292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */,
 				388071644F9006B2FA3533E3 /* SettingsWindowController.swift */,
+				BB2222220000000000000002 /* WelcomeWindowController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -82,6 +95,7 @@
 				F545A5DBA666EF39E83AB5B2 /* Picker */,
 				6B30CC62B9475569BD141810 /* Preview */,
 				B7BBF13247C466FF99300D51 /* Settings */,
+				BB3333330000000000000001 /* Welcome */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -100,6 +114,7 @@
 				E0E99B89D6DE5E11E5D754B8 /* AppConstants.swift */,
 				F49EC91139EFC2CD2A4C7A45 /* Accessibility */,
 				9AADF2CF940ECBFB1FB701DC /* Hotkey */,
+				AA3333330000000000000001 /* Models */,
 				F31DB87D5252F3EFD9BECED0 /* OpenAI */,
 				D52E7E3A1096B582D9ECCB9A /* Pasteboard */,
 				D8832882FA188506574C7BA5 /* Settings */,
@@ -112,6 +127,7 @@
 		35F1145195D42EEA2B4A8992 = {
 			isa = PBXGroup;
 			children = (
+				BB2222220000000000000003 /* Assets.xcassets */,
 				074F035A111B6FD7370301C5 /* App */,
 				3502DE2D37527E688CAE4BD6 /* Core */,
 				230AB913DDF1F52F19C066B7 /* Features */,
@@ -154,13 +170,23 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		AA3333330000000000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AA2222220000000000000006 /* ModelProvider.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
 		B7BBF13247C466FF99300D51 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
-				A69F548D66C6E90D601D7CF0 /* HotkeySettingsView.swift */,
-				124F0B301A67D496757094CA /* OpenAISettingsView.swift */,
+				AA2222220000000000000001 /* GeneralSettingsView.swift */,
+				AA2222220000000000000002 /* ModelsSettingsView.swift */,
+				AA2222220000000000000003 /* ProviderDetailView.swift */,
+				AA2222220000000000000005 /* PromptEditSheet.swift */,
+				AA2222220000000000000004 /* PromptsSettingsView.swift */,
 				8065F16C7518580C5535E785 /* SettingsRootView.swift */,
-				B4A2CCA0CA2365E3E05A4F79 /* TransformationsSettingsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -208,6 +234,14 @@
 			path = Picker;
 			sourceTree = "<group>";
 		};
+		BB3333330000000000000001 /* Welcome */ = {
+			isa = PBXGroup;
+			children = (
+				BB2222220000000000000001 /* WelcomeView.swift */,
+			);
+			path = Welcome;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -216,6 +250,7 @@
 			buildConfigurationList = EFE30D6915D4579356F1E9AA /* Build configuration list for PBXNativeTarget "InlineRewriter" */;
 			buildPhases = (
 				653F59B747AE279E02CC070D /* Sources */,
+				BB4444440000000000000001 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -235,7 +270,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					6A60BE86C9067B7587156793 = {
 						DevelopmentTeam = "";
@@ -271,12 +306,16 @@
 				8EB6A9973AB3D41E713E20EA /* AppDelegate.swift in Sources */,
 				DC02E76B2C469264DED88050 /* Hotkey.swift in Sources */,
 				84199D83DE39E80AF4F3D7E4 /* HotkeyManager.swift in Sources */,
-				18900A3DCAF4AFB61019629E /* HotkeySettingsView.swift in Sources */,
+				AA1111110000000000000001 /* GeneralSettingsView.swift in Sources */,
+				AA1111110000000000000002 /* ModelsSettingsView.swift in Sources */,
+				AA1111110000000000000003 /* ProviderDetailView.swift in Sources */,
+				AA1111110000000000000004 /* PromptsSettingsView.swift in Sources */,
+				AA1111110000000000000005 /* PromptEditSheet.swift in Sources */,
+				AA1111110000000000000006 /* ModelProvider.swift in Sources */,
 				7B2225BEA2D97E9F9A7BBC90 /* InlineRewriterApp.swift in Sources */,
 				374EC108FB69887F6EAD599E /* KeychainStore.swift in Sources */,
 				862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */,
 				865CD84D568A913837B2BE5D /* OpenAIModel.swift in Sources */,
-				5E1297BFCD4623006886D58A /* OpenAISettingsView.swift in Sources */,
 				8CF900E618F100AF47A621A5 /* PasteboardService.swift in Sources */,
 				4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */,
 				324FF74ED56A7651055FFFBA /* PreviewView.swift in Sources */,
@@ -289,11 +328,23 @@
 				2DC9BDA537BAFB369C383A00 /* TextTransformer.swift in Sources */,
 				BFFFB13AC8CAB875597CB2E1 /* TransformationPickerView.swift in Sources */,
 				8E7E466AE65517E544294F52 /* TransformationPickerViewModel.swift in Sources */,
-				6194A4046BB105355E454288 /* TransformationsSettingsView.swift in Sources */,
+				BB1111110000000000000001 /* WelcomeView.swift in Sources */,
+				BB1111110000000000000002 /* WelcomeWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BB4444440000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB1111110000000000000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
 		1AF550442C1F3279C13E6587 /* Debug */ = {
@@ -302,6 +353,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InlineRewriter.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Inline Writer";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -320,6 +372,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InlineRewriter.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Inline Writer";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -366,10 +419,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -383,6 +438,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -423,10 +479,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -447,6 +505,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;

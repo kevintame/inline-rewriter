@@ -36,7 +36,7 @@ final class OpenAIClient {
         let body = ChatCompletionsRequest(
             model: settings.selectedModel.rawValue,
             messages: [
-                .init(role: "system", content: "You are a helpful writing assistant."),
+                .init(role: "system", content: settings.baseAIInstructions),
                 .init(role: "user", content: prompt)
             ]
         )

@@ -10,36 +10,39 @@ import os.log
 /// Simulating key events requires Accessibility permission.
 final class PasteboardService {
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Pasteboard")
-    /// Backup of original pasteboard state.
+    /// Backup of original pasteboard state stored as raw data
+    /// (NSPasteboardItem objects can't be reused across pasteboards).
     struct PasteboardBackup {
-        let items: [NSPasteboardItem]
+        let itemData: [[(NSPasteboard.PasteboardType, Data)]]
         let changeCount: Int
     }
 
-    /// Backs up the current pasteboard contents.
+    /// Backs up the current pasteboard contents as raw data.
     private func backupPasteboard() -> PasteboardBackup? {
         let pb = NSPasteboard.general
-        guard let items = pb.pasteboardItems else { return nil }
+        guard let items = pb.pasteboardItems, !items.isEmpty else { return nil }
 
-        // Deep copy items to preserve their data
-        let copiedItems = items.compactMap { item -> NSPasteboardItem? in
-            let newItem = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    newItem.setData(data, forType: type)
-                }
+        let rawItems = items.map { item in
+            item.types.compactMap { type -> (NSPasteboard.PasteboardType, Data)? in
+                guard let data = item.data(forType: type) else { return nil }
+                return (type, data)
             }
-            return newItem
         }
 
-        return PasteboardBackup(items: copiedItems, changeCount: pb.changeCount)
+        return PasteboardBackup(itemData: rawItems, changeCount: pb.changeCount)
     }
 
-    /// Restores a previously backed-up pasteboard state.
+    /// Restores a previously backed-up pasteboard state by creating fresh items.
     private func restorePasteboard(_ backup: PasteboardBackup) {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.writeObjects(backup.items)
+        for itemData in backup.itemData {
+            let newItem = NSPasteboardItem()
+            for (type, data) in itemData {
+                newItem.setData(data, forType: type)
+            }
+            pb.writeObjects([newItem])
+        }
     }
 
     func copySelectionToPasteboard() throws -> PasteboardBackup? {
@@ -72,13 +75,26 @@ final class PasteboardService {
         }
         keyUp.flags = .maskCommand
 
+        // Clear pasteboard before copying so we can detect stale reads
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        let previousChangeCount = pb.changeCount
+
         logger.debug("Posting Cmd+C events")
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
 
         logger.info("Copy completed, waiting for pasteboard update")
-        // Small delay to allow pasteboard to update.
-        usleep(80_000)
+        // Poll until the pasteboard changeCount increments (meaning the copy landed).
+        let deadline = DispatchTime.now() + .milliseconds(500)
+        while pb.changeCount == previousChangeCount && DispatchTime.now() < deadline {
+            usleep(10_000) // poll every 10ms
+        }
+        if pb.changeCount == previousChangeCount {
+            logger.warning("Pasteboard changeCount did not change after Cmd+C — copy may have failed")
+        }
+        // Additional settle time for the pasteboard data to be fully written.
+        usleep(50_000)
 
         return backup
     }
@@ -143,8 +159,9 @@ final class PasteboardService {
         keyUp.post(tap: .cghidEventTap)
         logger.info("Posted paste events")
 
-        // Small delay to allow paste to complete
-        usleep(80_000)
+        // Delay to allow the target app to process the paste event and read the pasteboard.
+        // 300ms covers heavier apps (Electron-based editors, Slack, etc.) where 80ms was too short.
+        usleep(300_000)
         logger.debug("Paste delay completed")
 
         // Restore original clipboard if backup exists

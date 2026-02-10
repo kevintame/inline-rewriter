@@ -25,7 +25,14 @@
       "Bash(sudo xcode-select:*)",
       "Bash(plutil -lint:*)",
       "Bash(mdfind:*)",
-      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)"
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
+      "Bash(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
+      "Bash(xcrun swiftc:*)",
+      "Bash(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild:*)",
+      "Bash(xcrun --find:*)",
+      "Bash(xargs:*)",
+      "Bash(/usr/bin/xcodebuild:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

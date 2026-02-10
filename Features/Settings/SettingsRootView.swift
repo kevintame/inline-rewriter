@@ -8,16 +8,28 @@ struct SettingsRootView: View {
 
     var body: some View {
         TabView {
-            TransformationsSettingsView(settings: settings)
-                .tabItem { Text("Transformations") }
+            GeneralSettingsView(
+                settings: settings,
+                hotkeyManager: hotkeyManager,
+                alertPresenter: alertPresenter
+            )
+            .tabItem {
+                Label("General", systemImage: "gear")
+            }
 
-            OpenAISettingsView(settings: settings, keychain: keychain, alertPresenter: alertPresenter)
-                .tabItem { Text("OpenAI") }
+            ModelsSettingsView(
+                settings: settings,
+                keychain: keychain
+            )
+            .tabItem {
+                Label("Models", systemImage: "server.rack")
+            }
 
-            HotkeySettingsView(settings: settings, hotkeyManager: hotkeyManager, alertPresenter: alertPresenter)
-                .tabItem { Text("Hotkey") }
+            PromptsSettingsView(settings: settings)
+                .tabItem {
+                    Label("Prompts", systemImage: "text.bubble")
+                }
         }
-        .padding(16)
-        .frame(width: 640, height: 420)
+        .frame(width: 700, height: 500)
     }
 }

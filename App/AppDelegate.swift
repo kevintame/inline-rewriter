@@ -12,8 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let textPositionService = TextPositionService()
     private var anchorWindow: PopoverAnchorWindow?
+    private var isProcessingHotkey = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
         setUpStatusItem()
         setUpPopovers()
 
@@ -30,6 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         container.hotkeyManager.onHotkey = { [weak self] in
             self?.handleHotkey()
         }
+        // Close the default SwiftUI WindowGroup window (preserve status item window)
+        let statusWindow = statusItem.button?.window
+        NSApp.windows.filter { $0 !== statusWindow }.forEach { $0.close() }
+
+        // Show welcome window
+        WelcomeWindowController.shared.showWelcome()
+
         if !container.hotkeyManager.start() {
             container.alertPresenter.showError(
                 title: "Hotkey unavailable",
@@ -45,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: "Inline Rewriter")
+            button.image = NSImage(systemSymbolName: "pencil.circle.fill", accessibilityDescription: "Inline Rewriter")
             button.action = #selector(didClickStatusItem)
             button.target = self
         }
@@ -79,10 +88,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleHotkey() {
-        Task { @MainActor in
-            // Capture the frontmost app BEFORE showing popover
-            let targetApp = NSWorkspace.shared.frontmostApplication
+        guard !isProcessingHotkey else { return }
+        isProcessingHotkey = true
 
+        // Dismiss any stale popovers before starting a new flow
+        transformationPopover.performClose(nil)
+        transformationPopover.contentViewController = nil
+        previewPopover.performClose(nil)
+        previewPopover.contentViewController = nil
+        anchorWindow?.orderOut(nil)
+
+        // Capture the frontmost app synchronously before the async task,
+        // so app focus changes during scheduling don't affect the target.
+        let targetApp = NSWorkspace.shared.frontmostApplication
+
+        Task { @MainActor in
             do {
                 // 1) Try to copy selection (simulates ⌘C) and backup original clipboard
                 let backup = try container.pasteboardService.copySelectionToPasteboard()
@@ -90,12 +110,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 2) Read plain text from pasteboard
                 guard let input = container.pasteboardService.readStringFromPasteboard(), !input.isEmpty else {
                     container.alertPresenter.showError(title: "No text", message: "Could not read selected text from the clipboard.")
+                    isProcessingHotkey = false
                     return
                 }
 
                 showTransformationPicker(for: input, backup: backup, targetApp: targetApp)
             } catch {
                 container.alertPresenter.showError(title: "Permission required", message: error.localizedDescription)
+                isProcessingHotkey = false
             }
         }
     }
@@ -111,10 +133,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewModel.onCancel = { [weak self] in
             self?.transformationPopover.performClose(nil)
+            self?.transformationPopover.contentViewController = nil
+            self?.anchorWindow?.orderOut(nil)
+            self?.isProcessingHotkey = false
         }
 
         viewModel.onDidTransform = { [weak self] result, retry in
             self?.transformationPopover.performClose(nil)
+            self?.transformationPopover.contentViewController = nil
+            self?.anchorWindow?.orderOut(nil)
             self?.showPreview(input: input, output: result, backup: viewModel.pasteboardBackup, retry: retry, targetApp: targetApp)
         }
 
@@ -130,19 +157,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let viewModel = PreviewViewModel(
             inputText: input,
             outputText: output,
-            pasteboardService: container.pasteboardService,
-            alertPresenter: container.alertPresenter,
-            pasteboardBackup: backup,
-            targetApp: targetApp
+            pasteboardBackup: backup
         )
 
         viewModel.onCancel = { [weak self] in
             self?.previewPopover.performClose(nil)
+            self?.previewPopover.contentViewController = nil
+            self?.anchorWindow?.orderOut(nil)
+            self?.isProcessingHotkey = false
         }
 
         viewModel.onRetry = { [weak self] in
             self?.previewPopover.performClose(nil)
+            self?.previewPopover.contentViewController = nil
+            self?.anchorWindow?.orderOut(nil)
             retry()
+        }
+
+        viewModel.onReplace = { [weak self] in
+            guard let self else { return }
+            // 1. Dismiss UI first
+            self.previewPopover.performClose(nil)
+            self.previewPopover.contentViewController = nil
+            self.anchorWindow?.orderOut(nil)
+
+            // 2. Delay for macOS to process dismissal + focus transfer
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                do {
+                    try self.container.pasteboardService.replaceSelection(
+                        with: viewModel.outputText,
+                        restoring: viewModel.pasteboardBackup,
+                        targetApp: targetApp
+                    )
+                } catch {
+                    self.container.alertPresenter.showError(
+                        title: "Replace Failed",
+                        message: error.localizedDescription
+                    )
+                }
+                self.isProcessingHotkey = false
+            }
         }
 
         previewPopover.contentViewController = NSHostingController(

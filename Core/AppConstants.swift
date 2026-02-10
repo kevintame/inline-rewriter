@@ -7,5 +7,7 @@ enum AppConstants {
 
     enum KeychainAccounts {
         static let openAIKey = "openai_api_key"
+        static let anthropicKey = "anthropic_api_key"
+        static let googleGeminiKey = "google_gemini_api_key"
     }
 }

@@ -76,6 +76,12 @@ final class TextPositionService {
             logger.info("Converted bounds (flipped→normal): \(NSStringFromRect(rect))")
         }
 
+        // Reject zero-size bounds (Electron apps like Slack return these)
+        guard rect.width > 0 && rect.height > 0 else {
+            logger.debug("Bounds are zero-size, treating as unavailable")
+            return nil
+        }
+
         logger.info("Got text bounds: \(NSStringFromRect(rect))")
         return rect
     }
