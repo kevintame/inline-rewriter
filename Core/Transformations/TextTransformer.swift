@@ -1,13 +1,11 @@
 import Foundation
 
-/// Domain service that applies a transformation using OpenAI.
+/// Domain service that applies a transformation using the configured model client.
 final class TextTransformer {
     private let openAI: OpenAIClient
-    private let settings: SettingsStore
 
-    init(openAI: OpenAIClient, settings: SettingsStore) {
+    init(openAI: OpenAIClient) {
         self.openAI = openAI
-        self.settings = settings
     }
 
     func run(transformation: TextTransformation, input: String) async throws -> String {

@@ -2,21 +2,20 @@ import Cocoa
 import SwiftUI
 
 /// Manages the Settings window for AppKit menu bar integration.
-/// Uses NSWindowController for reliable programmatic opening on macOS 12.0+.
 final class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
 
     private init() {
+        // Content is a fixed 700x500 SwiftUI view, so the window is not resizable.
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Inline Rewriter Settings"
         window.center()
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 700, height: 500)
 
         super.init(window: window)
     }
@@ -28,8 +27,7 @@ final class SettingsWindowController: NSWindowController {
     /// Configure the window with the settings view.
     /// Must be called after AppDelegate's container is initialized.
     func configure(with settingsView: SettingsRootView) {
-        let hostingController = NSHostingController(rootView: settingsView)
-        window?.contentViewController = hostingController
+        window?.contentViewController = NSHostingController(rootView: settingsView)
     }
 
     /// Show and activate the Settings window.

@@ -68,12 +68,12 @@ final class TextPositionService {
             return nil
         }
 
-        // CRITICAL: Convert from Accessibility coordinates (y=0 at top)
-        // to NSWindow coordinates (y=0 at bottom)
-        if let screenHeight = NSScreen.main?.frame.height {
-            let convertedY = screenHeight - rect.origin.y - rect.height
+        // Accessibility coordinates have their origin at the top-left of the *primary*
+        // display (screens[0]), not the display with keyboard focus. Flip against that
+        // one or the popover lands on the wrong monitor.
+        if let primaryHeight = NSScreen.screens.first?.frame.height {
+            let convertedY = primaryHeight - rect.origin.y - rect.height
             rect = CGRect(x: rect.origin.x, y: convertedY, width: rect.width, height: rect.height)
-            logger.info("Converted bounds (flipped→normal): \(NSStringFromRect(rect))")
         }
 
         // Reject zero-size bounds (Electron apps like Slack return these)
@@ -82,7 +82,7 @@ final class TextPositionService {
             return nil
         }
 
-        logger.info("Got text bounds: \(NSStringFromRect(rect))")
+        logger.debug("Got text bounds: \(NSStringFromRect(rect))")
         return rect
     }
 }

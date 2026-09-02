@@ -22,22 +22,10 @@ final class SettingsStore: ObservableObject {
         didSet { defaults.set(baseAIInstructions, forKey: Keys.baseAIInstructions) }
     }
 
-    @Published var launchAtLogin: Bool {
-        didSet { defaults.set(launchAtLogin, forKey: Keys.launchAtLogin) }
-    }
-
-    /// Computed bridge so OpenAIClient continues to work unchanged.
-    var selectedModel: OpenAIModel {
-        get {
-            let config = providerConfigs.first { $0.providerID == .openAI }
-            let rawValue = config?.defaultModel ?? "gpt-4o-mini"
-            return OpenAIModel(rawValue: rawValue) ?? .gpt4oMini
-        }
-        set {
-            if let idx = providerConfigs.firstIndex(where: { $0.providerID == .openAI }) {
-                providerConfigs[idx].defaultModel = newValue.rawValue
-            }
-        }
+    /// Set once the Welcome window has been dismissed. It is shown again only while
+    /// Accessibility permission is missing.
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: Keys.hasCompletedOnboarding) }
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -47,8 +35,12 @@ final class SettingsStore: ObservableObject {
         self.hotkey = Self.loadHotkey(defaults: defaults)
         self.providerConfigs = Self.loadProviderConfigs(defaults: defaults)
         self.baseAIInstructions = defaults.string(forKey: Keys.baseAIInstructions) ?? "You are a helpful writing assistant."
-        self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
+        self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
+    }
 
+    /// Config for a provider, falling back to defaults if it is somehow missing.
+    func config(for provider: ModelProviderID) -> ModelProviderConfig {
+        providerConfigs.first { $0.providerID == provider } ?? .defaultConfig(for: provider)
     }
 
     /// Enforce single-default-vendor constraint.
@@ -65,46 +57,38 @@ final class SettingsStore: ObservableObject {
         static let hotkey = "hotkey"
         static let providerConfigs = "providerConfigs"
         static let baseAIInstructions = "baseAIInstructions"
-        static let launchAtLogin = "launchAtLogin"
+        static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }
 
     // MARK: - Persistence
 
     private func saveTransformations() {
-        do {
-            let data = try JSONEncoder().encode(transformations)
-            defaults.set(data, forKey: Keys.transformations)
-            _ = defaults.synchronize()
-        } catch {
-            logger.error("Failed to save transformations: \(error.localizedDescription)")
-        }
+        save(transformations, forKey: Keys.transformations, label: "transformations")
     }
 
     private func saveHotkey() {
-        do {
-            let data = try JSONEncoder().encode(hotkey)
-            defaults.set(data, forKey: Keys.hotkey)
-            _ = defaults.synchronize()
-        } catch {
-            logger.error("Failed to save hotkey: \(error.localizedDescription)")
-        }
+        save(hotkey, forKey: Keys.hotkey, label: "hotkey")
     }
 
     private func saveProviderConfigs() {
+        save(providerConfigs, forKey: Keys.providerConfigs, label: "provider configs")
+    }
+
+    private func save<T: Encodable>(_ value: T, forKey key: String, label: String) {
         do {
-            let data = try JSONEncoder().encode(providerConfigs)
-            defaults.set(data, forKey: Keys.providerConfigs)
-            _ = defaults.synchronize()
+            defaults.set(try JSONEncoder().encode(value), forKey: key)
         } catch {
-            logger.error("Failed to save provider configs: \(error.localizedDescription)")
+            logger.error("Failed to save \(label): \(error.localizedDescription)")
         }
     }
 
     private static func loadTransformations(defaults: UserDefaults) -> [TextTransformation] {
-        guard let data = defaults.data(forKey: Keys.transformations) else {
+        guard let data = defaults.data(forKey: Keys.transformations),
+              let decoded = try? JSONDecoder().decode([TextTransformation].self, from: data),
+              !decoded.isEmpty else {
             return [.presetRewrite]
         }
-        return (try? JSONDecoder().decode([TextTransformation].self, from: data)) ?? [.presetRewrite]
+        return decoded
     }
 
     private static func loadHotkey(defaults: UserDefaults) -> Hotkey {
@@ -115,12 +99,25 @@ final class SettingsStore: ObservableObject {
         return hk
     }
 
+    /// Loads stored configs and fills in any provider added since they were saved.
     private static func loadProviderConfigs(defaults: UserDefaults) -> [ModelProviderConfig] {
-        guard let data = defaults.data(forKey: Keys.providerConfigs),
-              let configs = try? JSONDecoder().decode([ModelProviderConfig].self, from: data),
-              !configs.isEmpty else {
-            return ModelProviderID.allCases.map { ModelProviderConfig.defaultConfig(for: $0) }
+        var configs: [ModelProviderConfig] = []
+        if let data = defaults.data(forKey: Keys.providerConfigs),
+           let decoded = try? JSONDecoder().decode([ModelProviderConfig].self, from: data) {
+            configs = decoded
         }
+
+        for provider in ModelProviderID.allCases where !configs.contains(where: { $0.providerID == provider }) {
+            var config = ModelProviderConfig.defaultConfig(for: provider)
+            config.isDefaultVendor = false
+            configs.append(config)
+        }
+
+        if !configs.contains(where: { $0.isDefaultVendor }),
+           let first = configs.firstIndex(where: { ModelProviderID.supported.contains($0.providerID) }) {
+            configs[first].isDefaultVendor = true
+        }
+
         return configs
     }
 }

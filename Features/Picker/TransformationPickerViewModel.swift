@@ -4,7 +4,6 @@ import SwiftUI
 @MainActor
 final class TransformationPickerViewModel: ObservableObject {
     let inputText: String
-    let pasteboardBackup: PasteboardService.PasteboardBackup?
 
     @Published var isBusy: Bool = false
     @Published var errorMessage: String?
@@ -12,18 +11,18 @@ final class TransformationPickerViewModel: ObservableObject {
 
     private let settings: SettingsStore
     private let transformer: TextTransformer
+    private var currentTask: Task<Void, Never>?
 
     var onCancel: (() -> Void)?
 
-    /// Called when transformation succeeds.
-    /// Provides output + a retry closure.
-    var onDidTransform: ((String, @escaping () -> Void) -> Void)?
+    /// Called when a transformation succeeds, with the output and the transformation that
+    /// produced it so the caller can offer a retry.
+    var onDidTransform: ((String, TextTransformation) -> Void)?
 
-    init(inputText: String, settings: SettingsStore, transformer: TextTransformer, pasteboardBackup: PasteboardService.PasteboardBackup?) {
+    init(inputText: String, settings: SettingsStore, transformer: TextTransformer) {
         self.inputText = inputText
         self.settings = settings
         self.transformer = transformer
-        self.pasteboardBackup = pasteboardBackup
     }
 
     var transformations: [TextTransformation] {
@@ -31,23 +30,32 @@ final class TransformationPickerViewModel: ObservableObject {
     }
 
     func cancel() {
+        cancelInFlight()
         onCancel?()
     }
 
+    /// Cancels any request in progress without notifying `onCancel`.
+    func cancelInFlight() {
+        currentTask?.cancel()
+        currentTask = nil
+        isBusy = false
+    }
+
     func run(_ transformation: TextTransformation) {
+        currentTask?.cancel()
         isBusy = true
         errorMessage = nil
 
-        Task {
+        currentTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 let output = try await transformer.run(transformation: transformation, input: inputText)
+                guard !Task.isCancelled else { return }
                 isBusy = false
-
-                let retry: () -> Void = { [weak self] in
-                    self?.run(transformation)
-                }
-                onDidTransform?(output, retry)
+                onDidTransform?(output, transformation)
             } catch {
+                // URLSession reports cancellation as an error; a cancelled flow has no UI left to show it in.
+                guard !Task.isCancelled else { return }
                 isBusy = false
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
             }
@@ -55,6 +63,7 @@ final class TransformationPickerViewModel: ObservableObject {
     }
 
     func selectNext() {
+        guard !transformations.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, transformations.count - 1)
     }
 

@@ -5,15 +5,25 @@ import Carbon.HIToolbox
 
 struct HotkeyRecorderView: NSViewRepresentable {
     @ObservedObject var settings: SettingsStore
-    let hotkeyManager: HotkeyManager
+    /// Called with a valid shortcut once the user finishes recording.
+    let onRecord: (Hotkey) -> Void
+    /// Called when recording starts (true) or ends (false), so the live hotkey can be
+    /// suspended; otherwise pressing the current shortcut triggers a rewrite instead of
+    /// being recorded.
+    let onRecordingChanged: (Bool) -> Void
+    @Binding var validationMessage: String?
 
     func makeNSView(context: Context) -> HotkeyRecorderNSView {
         let view = HotkeyRecorderNSView()
         view.displayText = settings.hotkey.displayString
-        view.onHotkeyRecorded = { keyCode, modifiers in
-            settings.hotkey = Hotkey(keyCode: keyCode, modifiers: modifiers)
-            _ = hotkeyManager.start()
+        view.onHotkeyRecorded = { hotkey in
+            validationMessage = nil
+            onRecord(hotkey)
         }
+        view.onInvalidShortcut = {
+            validationMessage = "Shortcut must include ⌘, ⌥, or ⌃."
+        }
+        view.onRecordingChanged = onRecordingChanged
         return view
     }
 
@@ -27,8 +37,10 @@ struct HotkeyRecorderView: NSViewRepresentable {
 
 class HotkeyRecorderNSView: NSView {
     var displayText: String = ""
-    var isRecording = false
-    var onHotkeyRecorded: ((_ keyCode: Int, _ modifiers: [Hotkey.Modifier]) -> Void)?
+    private(set) var isRecording = false
+    var onHotkeyRecorded: ((Hotkey) -> Void)?
+    var onInvalidShortcut: (() -> Void)?
+    var onRecordingChanged: ((Bool) -> Void)?
 
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
@@ -47,12 +59,13 @@ class HotkeyRecorderNSView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea { removeTrackingArea(existing) }
-        trackingArea = NSTrackingArea(
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.mouseEnteredAndExited, .activeAlways],
             owner: self
         )
-        addTrackingArea(trackingArea!)
+        addTrackingArea(area)
+        trackingArea = area
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -97,10 +110,8 @@ class HotkeyRecorderNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if !isRecording {
-            isRecording = true
+            setRecording(true)
             window?.makeFirstResponder(self)
-            invalidateIntrinsicContentSize()
-            needsDisplay = true
         }
     }
 
@@ -116,14 +127,11 @@ class HotkeyRecorderNSView: NSView {
 
         // Escape cancels recording
         if event.keyCode == UInt16(kVK_Escape) && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
-            isRecording = false
-            invalidateIntrinsicContentSize()
-            needsDisplay = true
+            setRecording(false)
             window?.makeFirstResponder(nil)
             return
         }
 
-        let keyCode = Int(event.keyCode)
         var mods: [Hotkey.Modifier] = []
         let flags = event.modifierFlags
         if flags.contains(.control) { mods.append(.control) }
@@ -131,20 +139,32 @@ class HotkeyRecorderNSView: NSView {
         if flags.contains(.shift)   { mods.append(.shift) }
         if flags.contains(.command) { mods.append(.command) }
 
-        isRecording = false
-        displayText = Hotkey(keyCode: keyCode, modifiers: mods).displayString
-        invalidateIntrinsicContentSize()
-        needsDisplay = true
-        window?.makeFirstResponder(nil)
+        let hotkey = Hotkey(keyCode: Int(event.keyCode), modifiers: mods)
+        guard hotkey.isValidGlobalShortcut else {
+            // Stay in recording mode so the user can try again.
+            onInvalidShortcut?()
+            return
+        }
 
-        onHotkeyRecorded?(keyCode, mods)
+        displayText = hotkey.displayString
+        setRecording(false)
+        window?.makeFirstResponder(nil)
+        onHotkeyRecorded?(hotkey)
     }
 
     override func resignFirstResponder() -> Bool {
-        isRecording = false
+        if isRecording {
+            setRecording(false)
+        }
+        return super.resignFirstResponder()
+    }
+
+    private func setRecording(_ recording: Bool) {
+        guard recording != isRecording else { return }
+        isRecording = recording
         invalidateIntrinsicContentSize()
         needsDisplay = true
-        return super.resignFirstResponder()
+        onRecordingChanged?(recording)
     }
 }
 
@@ -153,7 +173,11 @@ class HotkeyRecorderNSView: NSView {
 struct GeneralSettingsView: View {
     @ObservedObject var settings: SettingsStore
     let hotkeyManager: HotkeyManager
-    let alertPresenter: AlertPresenter
+    @ObservedObject var launchAtLogin: LaunchAtLoginService
+    @ObservedObject var permission: AccessibilityPermissionMonitor
+
+    @State private var hotkeyMessage: String?
+    @State private var launchAtLoginError: String?
 
     var body: some View {
         ScrollView {
@@ -161,27 +185,43 @@ struct GeneralSettingsView: View {
                 // MARK: - Keyboard Shortcuts
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Keyboard Shortcuts", systemImage: "keyboard")
+                        Label("Keyboard Shortcut", systemImage: "keyboard")
                             .font(.headline)
 
-                        Text("Set the keyboard shortcut to show the AI popup when text is selected.")
+                        Text("Press this shortcut with text selected in any app to show the prompt picker.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         HStack {
-                            Text("Show AI Popup:")
+                            Text("Show prompt picker:")
                             Spacer()
-                            HotkeyRecorderView(settings: settings, hotkeyManager: hotkeyManager)
-                                .frame(height: 26)
+                            HotkeyRecorderView(
+                                settings: settings,
+                                onRecord: applyHotkey,
+                                onRecordingChanged: { recording in
+                                    if recording {
+                                        hotkeyManager.stop()
+                                    } else {
+                                        restartHotkey()
+                                    }
+                                },
+                                validationMessage: $hotkeyMessage
+                            )
+                            .frame(height: 26)
                             Button {
-                                settings.hotkey = .default
-                                _ = hotkeyManager.start()
+                                applyHotkey(.default)
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                             .help("Reset to default shortcut")
+                        }
+
+                        if let hotkeyMessage {
+                            Text(hotkeyMessage)
+                                .font(.caption)
+                                .foregroundStyle(.red)
                         }
                     }
                     .padding(4)
@@ -197,8 +237,24 @@ struct GeneralSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        Toggle("Launch at Login", isOn: $settings.launchAtLogin)
+                        Toggle("Launch at Login", isOn: launchAtLoginBinding)
                             .toggleStyle(.switch)
+
+                        if launchAtLogin.requiresApproval {
+                            HStack {
+                                Text("Approve Inline Rewriter under Login Items to finish.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                Button("Open Login Items") { launchAtLogin.openLoginItemsSettings() }
+                                    .controlSize(.small)
+                            }
+                        }
+
+                        if let launchAtLoginError {
+                            Text(launchAtLoginError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding(4)
                 }
@@ -209,21 +265,22 @@ struct GeneralSettingsView: View {
                         Label("Accessibility", systemImage: "lock.shield")
                             .font(.headline)
 
-                        Text("Accessibility permission is required to read selected text and simulate keystrokes.")
+                        Text("Required to read the selected text and paste the result.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         HStack {
                             Text("Status:")
-                            if AXIsProcessTrusted() {
-                                Text("Granted")
-                                    .foregroundColor(.green)
-                                    .fontWeight(.medium)
-                            } else {
-                                Text("Not Granted")
-                                    .foregroundColor(.red)
-                                    .fontWeight(.medium)
+                            Text(permission.isTrusted ? "Granted" : "Not Granted")
+                                .foregroundColor(permission.isTrusted ? .green : .red)
+                                .fontWeight(.medium)
+                            Spacer()
+                            if !permission.isTrusted {
+                                Button("Grant Access") { permission.requestAccess() }
+                                    .controlSize(.small)
                             }
+                            Button("Open System Settings") { permission.openSystemSettings() }
+                                .controlSize(.small)
                         }
                     }
                     .padding(4)
@@ -248,6 +305,50 @@ struct GeneralSettingsView: View {
                 }
             }
             .padding()
+        }
+        .onAppear {
+            permission.beginObserving()
+            launchAtLogin.refresh()
+        }
+        .onDisappear {
+            permission.endObserving()
+        }
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin.isEnabled || launchAtLogin.requiresApproval },
+            set: { enabled in
+                do {
+                    try launchAtLogin.setEnabled(enabled)
+                    launchAtLoginError = nil
+                } catch {
+                    launchAtLoginError = error.localizedDescription
+                }
+            }
+        )
+    }
+
+    /// Registers the new shortcut, reverting to the previous one if registration fails
+    /// (typically because another app owns it).
+    private func applyHotkey(_ hotkey: Hotkey) {
+        let previous = settings.hotkey
+        settings.hotkey = hotkey
+        do {
+            try hotkeyManager.start()
+            hotkeyMessage = nil
+        } catch {
+            settings.hotkey = previous
+            try? hotkeyManager.start()
+            hotkeyMessage = error.localizedDescription
+        }
+    }
+
+    private func restartHotkey() {
+        do {
+            try hotkeyManager.start()
+        } catch {
+            hotkeyMessage = error.localizedDescription
         }
     }
 }

@@ -4,6 +4,7 @@ struct ProviderDetailView: View {
     let providerID: ModelProviderID
     @Binding var config: ModelProviderConfig
     let keychain: KeychainStoring
+    let showsDefaultVendorToggle: Bool
     let onSetDefaultVendor: () -> Void
 
     @State private var apiKey: String = ""
@@ -13,6 +14,7 @@ struct ProviderDetailView: View {
     @State private var draftModel: String = ""
     @State private var draftIsDefault: Bool = false
     @State private var statusMessage: String?
+    @State private var statusIsError = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -21,7 +23,6 @@ struct ProviderDetailView: View {
                 .fontWeight(.semibold)
 
             Form {
-                // API Key
                 Section {
                     HStack {
                         if showAPIKey {
@@ -38,45 +39,64 @@ struct ProviderDetailView: View {
                     }
                 } header: {
                     Text("API Key")
+                } footer: {
+                    Text("Stored in your Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
-                // Host
                 Section {
                     TextField("Host", text: $draftHost)
                         .textFieldStyle(.roundedBorder)
                 } header: {
                     Text("Host")
-                }
-
-                // Sub Path
-                Section {
-                    TextField("Sub Path", text: $draftSubPath)
-                        .textFieldStyle(.roundedBorder)
-                } header: {
-                    Text("Sub Path")
-                }
-
-                // Default Model
-                Section {
-                    Picker("Model", selection: $draftModel) {
-                        ForEach(providerID.availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                } header: {
-                    Text("Default Model")
-                }
-
-                // Default Vendor
-                Section {
-                    Toggle("Default Vendor", isOn: $draftIsDefault)
-                        .toggleStyle(.switch)
-                } header: {
-                    Text("Default Vendor")
                 } footer: {
-                    Text("Only one provider can be the default vendor at a time.")
+                    Text("Requests always use HTTPS. Point this at any compatible server, such as a proxy.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    TextField("Path", text: $draftSubPath)
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("Path")
+                }
+
+                Section {
+                    HStack {
+                        TextField("Model", text: $draftModel)
+                            .textFieldStyle(.roundedBorder)
+                        Menu {
+                            ForEach(providerID.availableModels, id: \.self) { model in
+                                Button(model) { draftModel = model }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Suggested models")
+                    }
+                } header: {
+                    Text("Model")
+                } footer: {
+                    Text("Any model ID the provider accepts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if showsDefaultVendorToggle {
+                    Section {
+                        Toggle("Default Vendor", isOn: $draftIsDefault)
+                            .toggleStyle(.switch)
+                    } header: {
+                        Text("Default Vendor")
+                    } footer: {
+                        Text("Only one provider can be the default vendor at a time.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -92,7 +112,7 @@ struct ProviderDetailView: View {
                 if let statusMessage {
                     Text(statusMessage)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(statusIsError ? Color.red : Color.secondary)
                         .transition(.opacity)
                 }
 
@@ -118,7 +138,24 @@ struct ProviderDetailView: View {
     }
 
     private func save() {
-        // Save API key to keychain
+        let trimmedModel = draftModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            showStatus("Model cannot be empty.", isError: true)
+            return
+        }
+
+        var updated = config
+        updated.host = draftHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.subPath = draftSubPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.defaultModel = trimmedModel
+
+        do {
+            _ = try updated.endpointURL()
+        } catch {
+            showStatus(error.localizedDescription, isError: true)
+            return
+        }
+
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             if trimmedKey.isEmpty {
@@ -127,26 +164,28 @@ struct ProviderDetailView: View {
                 try keychain.writeString(trimmedKey, account: providerID.keychainAccount)
             }
         } catch {
-            statusMessage = "Keychain error"
+            showStatus("Keychain error: \(error.localizedDescription)", isError: true)
             return
         }
 
-        // Update config
-        config.host = draftHost
-        config.subPath = draftSubPath
-        config.defaultModel = draftModel
+        config.host = updated.host
+        config.subPath = updated.subPath
+        config.defaultModel = updated.defaultModel
 
         if draftIsDefault {
             onSetDefaultVendor()
         }
 
-        statusMessage = "Saved"
-
-        // Clear status after delay
+        showStatus("Saved", isError: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if statusMessage == "Saved" {
                 statusMessage = nil
             }
         }
+    }
+
+    private func showStatus(_ message: String, isError: Bool) {
+        statusMessage = message
+        statusIsError = isError
     }
 }

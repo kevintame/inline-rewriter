@@ -1,119 +1,136 @@
 import Cocoa
+import Carbon.HIToolbox
 import os.log
-import ApplicationServices
 
-/// Global (and local) keyboard event monitor.
+/// Registers the global hotkey through Carbon's `RegisterEventHotKey`.
 ///
-/// Notes:
-/// - `addGlobalMonitorForEvents` listens even when app is not active.
-/// - Some environments may require Accessibility permissions for full reliability.
+/// Compared to `NSEvent.addGlobalMonitorForEvents` this needs no Input Monitoring
+/// permission, works before Accessibility is granted, and consumes the keystroke so the
+/// frontmost app never sees it.
+@MainActor
 final class HotkeyManager {
     var onHotkey: (() -> Void)?
 
     private let settings: SettingsStore
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Hotkey")
 
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandlerRef: EventHandlerRef?
+
+    /// Four-char code "INRW" identifying our hotkey registrations.
+    private static let signature: OSType = 0x494E_5257
+    private static let hotKeyID: UInt32 = 1
 
     init(settings: SettingsStore) {
         self.settings = settings
     }
 
-    @discardableResult
-    func start() -> Bool {
+    deinit {
+        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
+        if let eventHandlerRef { RemoveEventHandler(eventHandlerRef) }
+    }
+
+    enum RegistrationError: LocalizedError {
+        case invalidShortcut(Hotkey)
+        case handlerInstallFailed(OSStatus)
+        case registrationFailed(Hotkey, OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidShortcut(let hotkey):
+                return "The shortcut \(hotkey.displayString) must include ⌘, ⌥, or ⌃. Change it in Settings."
+            case .handlerInstallFailed(let status):
+                return "Could not install the hotkey event handler (status \(status))."
+            case .registrationFailed(let hotkey, _):
+                return "The shortcut \(hotkey.displayString) could not be registered. Another app may already be using it. Change it in Settings."
+            }
+        }
+    }
+
+    /// Registers the current shortcut from settings, replacing any previous registration.
+    func start() throws {
         stop()
 
-        logger.info("Starting hotkey manager with hotkey: \(self.settings.hotkey.keyCode)")
-
-        // Check Accessibility permissions explicitly
-        let hasAccessibility = AXIsProcessTrusted()
-        logger.info("Accessibility permission status: \(hasAccessibility)")
-        if !hasAccessibility {
-            logger.warning("Accessibility permission not granted - global hotkey monitoring may not work")
+        let hotkey = settings.hotkey
+        guard hotkey.isValidGlobalShortcut else {
+            throw RegistrationError.invalidShortcut(hotkey)
         }
 
-        var localMonitorCreated = false
-        var globalMonitorCreated = false
+        try installEventHandlerIfNeeded()
 
-        // Local monitor helps when app is active.
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-
-            // DEBUG: Log every keyDown event received by local monitor
-            self.logger.debug("Local monitor: keyDown event - keyCode: \(event.keyCode), flags: \(event.modifierFlags.rawValue)")
-
-            if self.matchesHotkey(event) {
-                self.logger.info("✓ Local hotkey matched! Triggering callback...")
-                self.onHotkey?()
-                return nil
-            }
-            return event
+        var ref: EventHotKeyRef?
+        let id = EventHotKeyID(signature: Self.signature, id: Self.hotKeyID)
+        let status = RegisterEventHotKey(
+            UInt32(hotkey.keyCode),
+            hotkey.carbonModifiers,
+            id,
+            GetApplicationEventTarget(),
+            0,
+            &ref
+        )
+        guard status == noErr, let ref else {
+            logger.error("RegisterEventHotKey failed for \(hotkey.displayString) (status \(status))")
+            throw RegistrationError.registrationFailed(hotkey, status)
         }
-        localMonitorCreated = (localMonitor != nil)
 
-        // Global monitor for when app is inactive.
-        // May return nil if accessibility permissions are not granted.
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return }
-
-            // DEBUG: Log every keyDown event received by global monitor
-            self.logger.debug("Global monitor: keyDown event - keyCode: \(event.keyCode), flags: \(event.modifierFlags.rawValue)")
-
-            if self.matchesHotkey(event) {
-                self.logger.info("✓ Global hotkey matched! Triggering callback...")
-                self.onHotkey?()
-            }
-        }
-        globalMonitorCreated = (globalMonitor != nil)
-
-        let success = localMonitorCreated && globalMonitorCreated
-        if success {
-            logger.info("Hotkey manager started successfully")
-        } else {
-            logger.error("Failed to start hotkey manager - Local: \(localMonitorCreated), Global: \(globalMonitorCreated)")
-            if !globalMonitorCreated {
-                logger.error("Global monitor creation failed - Input Monitoring permission may be required")
-                logger.error("Check: System Settings → Privacy & Security → Input Monitoring")
-            }
-            if !localMonitorCreated {
-                logger.error("Local monitor creation failed - this is very unusual and may indicate a system issue")
-            }
-            stop() // Clean up partial initialization
-        }
-        return success
+        hotKeyRef = ref
+        logger.info("Registered global hotkey \(hotkey.displayString)")
     }
 
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            logger.debug("Removed global monitor")
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            logger.debug("Unregistered global hotkey")
         }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-            logger.debug("Removed local monitor")
-        }
-        globalMonitor = nil
-        localMonitor = nil
+        hotKeyRef = nil
     }
 
-    private func matchesHotkey(_ event: NSEvent) -> Bool {
-        let hotkey = settings.hotkey
-        let expectedFlags = hotkey.toModifierFlags()
+    private func installEventHandlerIfNeeded() throws {
+        guard eventHandlerRef == nil else { return }
 
-        // Normalize flags: only consider standard modifiers.
-        let relevant: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
-        let eventFlags = event.modifierFlags.intersection(relevant)
-
-        let keyCodeMatches = event.keyCode == UInt16(hotkey.keyCode)
-        let flagsMatch = eventFlags == expectedFlags
-
-        // DEBUG: Log comparison details
-        logger.debug("Hotkey match check:")
-        logger.debug("  Expected: keyCode=\(hotkey.keyCode), flags=\(expectedFlags.rawValue)")
-        logger.debug("  Received: keyCode=\(event.keyCode), flags=\(eventFlags.rawValue)")
-        logger.debug("  KeyCode match: \(keyCodeMatches), Flags match: \(flagsMatch)")
-
-        return keyCodeMatches && flagsMatch
+        var spec = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let userData = Unmanaged.passUnretained(self).toOpaque()
+        let status = InstallEventHandler(
+            GetApplicationEventTarget(),
+            hotKeyEventHandler,
+            1,
+            &spec,
+            userData,
+            &eventHandlerRef
+        )
+        guard status == noErr else {
+            throw RegistrationError.handlerInstallFailed(status)
+        }
     }
+
+    fileprivate func handleHotKeyEvent(_ id: EventHotKeyID) {
+        guard id.signature == Self.signature, id.id == Self.hotKeyID else { return }
+        onHotkey?()
+    }
+}
+
+/// C callback invoked by Carbon on the main thread when a registered hotkey is pressed.
+private let hotKeyEventHandler: EventHandlerUPP = { _, event, userData in
+    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+
+    var hotKeyID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+    )
+    guard status == noErr else { return status }
+
+    let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+    MainActor.assumeIsolated {
+        manager.handleHotKeyEvent(hotKeyID)
+    }
+    return noErr
 }

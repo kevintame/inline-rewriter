@@ -1,23 +1,127 @@
 import Cocoa
 import os.log
 
-/// Pasteboard integration.
+/// Reads the current selection and replaces it by simulating ⌘C / ⌘V.
 ///
-/// To "grab selected text", the common approach is:
-/// 1) Simulate ⌘C
-/// 2) Read from NSPasteboard.general
-///
-/// Simulating key events requires Accessibility permission.
+/// Both operations require Accessibility permission because they post synthetic
+/// keyboard events. Waits are `Task.sleep`s so the main thread never blocks.
+@MainActor
 final class PasteboardService {
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Pasteboard")
-    /// Backup of original pasteboard state stored as raw data
-    /// (NSPasteboardItem objects can't be reused across pasteboards).
+
+    /// Snapshot of the user's clipboard, stored as raw data so it can be recreated later.
+    /// `nil` means the clipboard was empty.
     struct PasteboardBackup {
         let itemData: [[(NSPasteboard.PasteboardType, Data)]]
-        let changeCount: Int
     }
 
-    /// Backs up the current pasteboard contents as raw data.
+    struct Capture {
+        let text: String
+        let backup: PasteboardBackup?
+    }
+
+    enum PasteboardError: LocalizedError {
+        case accessibilityPermissionRequired
+        case cgEventCreationFailed
+        case noSelection
+        case targetApplicationTerminated
+
+        var errorDescription: String? {
+            switch self {
+            case .accessibilityPermissionRequired:
+                return "Accessibility permission is required to read and replace the selected text. Enable it in System Settings → Privacy & Security → Accessibility."
+            case .cgEventCreationFailed:
+                return "Failed to create keyboard events. Try restarting the app."
+            case .noSelection:
+                return "Nothing was copied. Select some text and try again."
+            case .targetApplicationTerminated:
+                return "The application you were working in has quit."
+            }
+        }
+    }
+
+    // MARK: - Capture
+
+    /// Copies the current selection and returns it with a backup of the previous clipboard.
+    /// Restores the clipboard itself if nothing was copied.
+    func captureSelection() async throws -> Capture {
+        guard AXIsProcessTrusted() else {
+            throw PasteboardError.accessibilityPermissionRequired
+        }
+
+        let backup = backupPasteboard()
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        let previousChangeCount = pb.changeCount
+
+        try postKeyboardShortcut(virtualKey: 8) // 'c' on US layout
+
+        // Wait for the target app to write to the pasteboard.
+        let deadline = Date().addingTimeInterval(0.5)
+        while pb.changeCount == previousChangeCount && Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        // Let the app finish writing all representations.
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let text = pb.string(forType: .string) ?? ""
+        guard pb.changeCount != previousChangeCount, !text.isEmpty else {
+            logger.info("No selection captured; restoring clipboard")
+            restore(backup)
+            throw PasteboardError.noSelection
+        }
+
+        logger.info("Captured selection (\(text.count) chars)")
+        return Capture(text: text, backup: backup)
+    }
+
+    // MARK: - Replace
+
+    /// Puts `text` on the clipboard, pastes into `targetApp`, then restores the clipboard.
+    func replaceSelection(with text: String, restoring backup: PasteboardBackup?, targetApp: NSRunningApplication?) async throws {
+        guard AXIsProcessTrusted() else {
+            throw PasteboardError.accessibilityPermissionRequired
+        }
+
+        if let targetApp {
+            if targetApp.isTerminated {
+                throw PasteboardError.targetApplicationTerminated
+            }
+            targetApp.activate(options: .activateIgnoringOtherApps)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        } else {
+            logger.warning("No target app; paste will go to whichever app is frontmost")
+        }
+
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+
+        try postKeyboardShortcut(virtualKey: 9) // 'v' on US layout
+        logger.info("Posted paste (\(text.count) chars)")
+
+        // Heavier apps (Electron editors, Slack) need a few hundred ms to read the pasteboard.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        restore(backup)
+    }
+
+    // MARK: - Clipboard backup
+
+    /// Restores a backup, or clears the clipboard when the backup is `nil` (it was empty).
+    func restore(_ backup: PasteboardBackup?) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        guard let backup else { return }
+        for itemData in backup.itemData {
+            let newItem = NSPasteboardItem()
+            for (type, data) in itemData {
+                newItem.setData(data, forType: type)
+            }
+            pb.writeObjects([newItem])
+        }
+    }
+
     private func backupPasteboard() -> PasteboardBackup? {
         let pb = NSPasteboard.general
         guard let items = pb.pasteboardItems, !items.isEmpty else { return nil }
@@ -28,165 +132,20 @@ final class PasteboardService {
                 return (type, data)
             }
         }
-
-        return PasteboardBackup(itemData: rawItems, changeCount: pb.changeCount)
+        return PasteboardBackup(itemData: rawItems)
     }
 
-    /// Restores a previously backed-up pasteboard state by creating fresh items.
-    private func restorePasteboard(_ backup: PasteboardBackup) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        for itemData in backup.itemData {
-            let newItem = NSPasteboardItem()
-            for (type, data) in itemData {
-                newItem.setData(data, forType: type)
-            }
-            pb.writeObjects([newItem])
-        }
-    }
+    // MARK: - Key events
 
-    func copySelectionToPasteboard() throws -> PasteboardBackup? {
-        logger.info("Copying selection to pasteboard")
-
-        // Backup original clipboard contents before copying
-        let backup = backupPasteboard()
-
-        // Simulate ⌘C.
-        // If Accessibility permission is not granted, CGEvent posting may fail.
-        guard AXIsProcessTrusted() else {
-            logger.error("Accessibility permission not granted for copy")
-            throw PasteboardError.accessibilityPermissionRequired
-        }
-        logger.debug("Accessibility permission verified")
-
-        logger.debug("Creating CGEvents for Cmd+C")
-        let keyC: CGKeyCode = 8 // US layout: 'c'
+    private func postKeyboardShortcut(virtualKey: CGKeyCode) throws {
         let source = CGEventSource(stateID: .combinedSessionState)
-
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyC, keyDown: true) else {
-            logger.error("Failed to create keyDown CGEvent for copy")
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false) else {
             throw PasteboardError.cgEventCreationFailed
         }
         keyDown.flags = .maskCommand
-
-        guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyC, keyDown: false) else {
-            logger.error("Failed to create keyUp CGEvent for copy")
-            throw PasteboardError.cgEventCreationFailed
-        }
         keyUp.flags = .maskCommand
-
-        // Clear pasteboard before copying so we can detect stale reads
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        let previousChangeCount = pb.changeCount
-
-        logger.debug("Posting Cmd+C events")
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
-
-        logger.info("Copy completed, waiting for pasteboard update")
-        // Poll until the pasteboard changeCount increments (meaning the copy landed).
-        let deadline = DispatchTime.now() + .milliseconds(500)
-        while pb.changeCount == previousChangeCount && DispatchTime.now() < deadline {
-            usleep(10_000) // poll every 10ms
-        }
-        if pb.changeCount == previousChangeCount {
-            logger.warning("Pasteboard changeCount did not change after Cmd+C — copy may have failed")
-        }
-        // Additional settle time for the pasteboard data to be fully written.
-        usleep(50_000)
-
-        return backup
-    }
-
-    func readStringFromPasteboard() -> String? {
-        let pb = NSPasteboard.general
-        return pb.string(forType: .string)
-    }
-
-    /// Replace selection by putting output on pasteboard and simulating ⌘V.
-    ///
-    /// In many editors, pasting will replace the existing selection.
-    /// Optionally restores the original clipboard after pasting.
-    func replaceSelection(with text: String, restoring backup: PasteboardBackup?, targetApp: NSRunningApplication?) throws {
-        logger.info("Starting replace operation (text length: \(text.count) chars)")
-
-        guard AXIsProcessTrusted() else {
-            logger.error("Accessibility permission not granted")
-            throw PasteboardError.accessibilityPermissionRequired
-        }
-        logger.debug("Accessibility permission verified")
-
-        // Restore focus to target application
-        if let targetApp = targetApp {
-            logger.info("Restoring focus to: \(targetApp.localizedName ?? "unknown")")
-            if targetApp.isTerminated {
-                logger.warning("Target app was terminated")
-                throw PasteboardError.targetApplicationTerminated
-            } else {
-                targetApp.activate(options: .activateIgnoringOtherApps)
-                usleep(100_000)  // Wait 100ms for activation
-                logger.debug("Focus restored")
-            }
-        } else {
-            logger.warning("No target app provided - paste may go to wrong application")
-        }
-
-        logger.debug("Updating pasteboard with transformed text")
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-        logger.debug("Pasteboard updated")
-
-        logger.debug("Creating CGEvents for Cmd+V")
-        let keyV: CGKeyCode = 9 // US layout: 'v'
-        let source = CGEventSource(stateID: .combinedSessionState)
-
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyV, keyDown: true) else {
-            logger.error("Failed to create keyDown CGEvent")
-            throw PasteboardError.cgEventCreationFailed
-        }
-        keyDown.flags = .maskCommand
-
-        guard let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyV, keyDown: false) else {
-            logger.error("Failed to create keyUp CGEvent")
-            throw PasteboardError.cgEventCreationFailed
-        }
-        keyUp.flags = .maskCommand
-
-        logger.debug("Posting Cmd+V events")
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-        logger.info("Posted paste events")
-
-        // Delay to allow the target app to process the paste event and read the pasteboard.
-        // 300ms covers heavier apps (Electron-based editors, Slack, etc.) where 80ms was too short.
-        usleep(300_000)
-        logger.debug("Paste delay completed")
-
-        // Restore original clipboard if backup exists
-        if let backup = backup {
-            logger.debug("Restoring original clipboard")
-            restorePasteboard(backup)
-        }
-
-        logger.info("Replace operation completed successfully")
-    }
-
-    enum PasteboardError: LocalizedError {
-        case accessibilityPermissionRequired
-        case cgEventCreationFailed
-        case targetApplicationTerminated
-
-        var errorDescription: String? {
-            switch self {
-            case .accessibilityPermissionRequired:
-                return "Accessibility permission is required to copy/paste the current selection. Enable it in System Settings → Privacy & Security → Accessibility."
-            case .cgEventCreationFailed:
-                return "Failed to create keyboard events. This may be a system issue. Try restarting the app or your Mac."
-            case .targetApplicationTerminated:
-                return "The target application was closed. Please select text again in the active application."
-            }
-        }
     }
 }

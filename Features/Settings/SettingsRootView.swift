@@ -4,14 +4,16 @@ struct SettingsRootView: View {
     @ObservedObject var settings: SettingsStore
     let keychain: KeychainStoring
     let hotkeyManager: HotkeyManager
-    let alertPresenter: AlertPresenter
+    @ObservedObject var launchAtLogin: LaunchAtLoginService
+    @ObservedObject var permission: AccessibilityPermissionMonitor
 
     var body: some View {
         TabView {
             GeneralSettingsView(
                 settings: settings,
                 hotkeyManager: hotkeyManager,
-                alertPresenter: alertPresenter
+                launchAtLogin: launchAtLogin,
+                permission: permission
             )
             .tabItem {
                 Label("General", systemImage: "gear")

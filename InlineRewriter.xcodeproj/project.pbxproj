@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CC1111110000000000000001 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000001 /* MainMenu.swift */; };
+		CC1111110000000000000002 /* AccessibilityPermissionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000002 /* AccessibilityPermissionMonitor.swift */; };
+		CC1111110000000000000003 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000003 /* LaunchAtLoginService.swift */; };
 		08C6982E4A4FF77E528C069F /* AlertPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FDCD577DA58BCCF369136 /* AlertPresenter.swift */; };
 		2DC9BDA537BAFB369C383A00 /* TextTransformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D18CE31054BA9655D312C1D /* TextTransformer.swift */; };
 		324FF74ED56A7651055FFFBA /* PreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F44A9BB3806E49772129CD3 /* PreviewView.swift */; };
@@ -15,10 +18,9 @@
 		44CE74047345F28E9F9EE1F3 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00E18E28D334C64D0B9DEDB /* SettingsStore.swift */; };
 		4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */; };
 		4D972A4F5DCDBF680F52B363 /* TextPositionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104B42C01F1386B6D256AA06 /* TextPositionService.swift */; };
-		7B2225BEA2D97E9F9A7BBC90 /* InlineRewriterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAFA914411372860C302E18 /* InlineRewriterApp.swift */; };
+		7B2225BEA2D97E9F9A7BBC90 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAFA914411372860C302E18 /* main.swift */; };
 		84199D83DE39E80AF4F3D7E4 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51A3A6ED713510957BDE153 /* HotkeyManager.swift */; };
 		862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */; };
-		865CD84D568A913837B2BE5D /* OpenAIModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF42B77B75EDD93ABF0F331C /* OpenAIModel.swift */; };
 		8CF900E618F100AF47A621A5 /* PasteboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829C2191AC53BFF4CE3B2ADC /* PasteboardService.swift */; };
 		8E7E466AE65517E544294F52 /* TransformationPickerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6DA5E0C2B3B0D6B9E1885B /* TransformationPickerViewModel.swift */; };
 		8EB6A9973AB3D41E713E20EA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64287F5EE4F3ADF78CADC155 /* AppDelegate.swift */; };
@@ -41,6 +43,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		CC2222220000000000000001 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
+		CC2222220000000000000002 /* AccessibilityPermissionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityPermissionMonitor.swift; sourceTree = "<group>"; };
+		CC2222220000000000000003 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		0A6DA5E0C2B3B0D6B9E1885B /* TransformationPickerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationPickerViewModel.swift; sourceTree = "<group>"; };
 		0B2943CC26D767FF88AF3EF5 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		104B42C01F1386B6D256AA06 /* TextPositionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPositionService.swift; sourceTree = "<group>"; };
@@ -65,10 +70,9 @@
 		AA2222220000000000000005 /* PromptEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptEditSheet.swift; sourceTree = "<group>"; };
 		AA2222220000000000000006 /* ModelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProvider.swift; sourceTree = "<group>"; };
 		AD4EC8ACB7021E9062D064DB /* TextTransformation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextTransformation.swift; sourceTree = "<group>"; };
-		AF42B77B75EDD93ABF0F331C /* OpenAIModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIModel.swift; sourceTree = "<group>"; };
 		B00E18E28D334C64D0B9DEDB /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
-		DAAFA914411372860C302E18 /* InlineRewriterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineRewriterApp.swift; sourceTree = "<group>"; };
+		DAAFA914411372860C302E18 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		E0E99B89D6DE5E11E5D754B8 /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
 		BB2222220000000000000001 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB2222220000000000000002 /* WelcomeWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowController.swift; sourceTree = "<group>"; };
@@ -76,12 +80,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		CC3333330000000000000001 /* System */ = {
+			isa = PBXGroup;
+			children = (
+				CC2222220000000000000003 /* LaunchAtLoginService.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
 		074F035A111B6FD7370301C5 /* App */ = {
 			isa = PBXGroup;
 			children = (
 				0B2943CC26D767FF88AF3EF5 /* AppContainer.swift */,
 				64287F5EE4F3ADF78CADC155 /* AppDelegate.swift */,
-				DAAFA914411372860C302E18 /* InlineRewriterApp.swift */,
+				CC2222220000000000000001 /* MainMenu.swift */,
+				DAAFA914411372860C302E18 /* main.swift */,
 				292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */,
 				388071644F9006B2FA3533E3 /* SettingsWindowController.swift */,
 				BB2222220000000000000002 /* WelcomeWindowController.swift */,
@@ -118,6 +131,7 @@
 				F31DB87D5252F3EFD9BECED0 /* OpenAI */,
 				D52E7E3A1096B582D9ECCB9A /* Pasteboard */,
 				D8832882FA188506574C7BA5 /* Settings */,
+				CC3333330000000000000001 /* System */,
 				9AEB3EE5B3B30F83E066C74C /* Transformations */,
 				2606CEB6C9C1787F1827EC80 /* UI */,
 			);
@@ -212,7 +226,6 @@
 			isa = PBXGroup;
 			children = (
 				B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */,
-				AF42B77B75EDD93ABF0F331C /* OpenAIModel.swift */,
 			);
 			path = OpenAI;
 			sourceTree = "<group>";
@@ -220,6 +233,7 @@
 		F49EC91139EFC2CD2A4C7A45 /* Accessibility */ = {
 			isa = PBXGroup;
 			children = (
+				CC2222220000000000000002 /* AccessibilityPermissionMonitor.swift */,
 				104B42C01F1386B6D256AA06 /* TextPositionService.swift */,
 			);
 			path = Accessibility;
@@ -301,6 +315,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				08C6982E4A4FF77E528C069F /* AlertPresenter.swift in Sources */,
+				CC1111110000000000000001 /* MainMenu.swift in Sources */,
+				CC1111110000000000000002 /* AccessibilityPermissionMonitor.swift in Sources */,
+				CC1111110000000000000003 /* LaunchAtLoginService.swift in Sources */,
 				F2080851592230184FC5EC6A /* AppConstants.swift in Sources */,
 				B4F77563258817C95A26AD3B /* AppContainer.swift in Sources */,
 				8EB6A9973AB3D41E713E20EA /* AppDelegate.swift in Sources */,
@@ -312,10 +329,9 @@
 				AA1111110000000000000004 /* PromptsSettingsView.swift in Sources */,
 				AA1111110000000000000005 /* PromptEditSheet.swift in Sources */,
 				AA1111110000000000000006 /* ModelProvider.swift in Sources */,
-				7B2225BEA2D97E9F9A7BBC90 /* InlineRewriterApp.swift in Sources */,
+				7B2225BEA2D97E9F9A7BBC90 /* main.swift in Sources */,
 				374EC108FB69887F6EAD599E /* KeychainStore.swift in Sources */,
 				862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */,
-				865CD84D568A913837B2BE5D /* OpenAIModel.swift in Sources */,
 				8CF900E618F100AF47A621A5 /* PasteboardService.swift in Sources */,
 				4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */,
 				324FF74ED56A7651055FFFBA /* PreviewView.swift in Sources */,
@@ -354,13 +370,14 @@
 				CODE_SIGN_ENTITLEMENTS = InlineRewriter.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Inline Writer";
+				INFOPLIST_KEY_CFBundleDisplayName = "Inline Rewriter";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kevinTame.InlineRewriter;
 				SDKROOT = macosx;
 			};
@@ -373,13 +390,14 @@
 				CODE_SIGN_ENTITLEMENTS = InlineRewriter.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Inline Writer";
+				INFOPLIST_KEY_CFBundleDisplayName = "Inline Rewriter";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kevinTame.InlineRewriter;
 				SDKROOT = macosx;
 			};
@@ -433,7 +451,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -499,7 +517,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

@@ -2,6 +2,7 @@ import Foundation
 
 /// Dependency container.
 /// Keep this small; it’s enough for scaffolding and makes future DI/test easier.
+@MainActor
 final class AppContainer {
     let settingsStore: SettingsStore
     let keychain: KeychainStoring
@@ -9,6 +10,8 @@ final class AppContainer {
     let hotkeyManager: HotkeyManager
     let pasteboardService: PasteboardService
     let alertPresenter: AlertPresenter
+    let accessibilityPermission: AccessibilityPermissionMonitor
+    let launchAtLogin: LaunchAtLoginService
 
     let openAIClient: OpenAIClient
     let textTransformer: TextTransformer
@@ -20,14 +23,13 @@ final class AppContainer {
         self.alertPresenter = AlertPresenter()
         self.pasteboardService = PasteboardService()
         self.hotkeyManager = HotkeyManager(settings: settingsStore)
+        self.accessibilityPermission = AccessibilityPermissionMonitor()
+        self.launchAtLogin = LaunchAtLoginService()
 
         self.openAIClient = OpenAIClient(
             settings: settingsStore,
             keychain: keychain
         )
-        self.textTransformer = TextTransformer(
-            openAI: openAIClient,
-            settings: settingsStore
-        )
+        self.textTransformer = TextTransformer(openAI: openAIClient)
     }
 }

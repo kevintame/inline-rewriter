@@ -1,40 +1,48 @@
 import Foundation
 
-/// Thin OpenAI API wrapper (Chat Completions).
+/// OpenAI Chat Completions client.
 ///
-/// NOTE: This is scaffolding. For production you’ll want:
-/// - streaming
-/// - retries/backoff
-/// - structured errors
-/// - telemetry
+/// Endpoint and model come from the OpenAI provider config in Settings, so any
+/// Chat-Completions-compatible server can be used by changing the host.
 final class OpenAIClient {
     private let settings: SettingsStore
     private let keychain: KeychainStoring
+    private let session: URLSession
 
-    private lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30.0  // 30 seconds per request
-        config.timeoutIntervalForResource = 60.0 // 60 seconds total
-        return URLSession(configuration: config)
-    }()
-
-    init(settings: SettingsStore, keychain: KeychainStoring) {
+    init(settings: SettingsStore, keychain: KeychainStoring, session: URLSession = OpenAIClient.makeSession()) {
         self.settings = settings
         self.keychain = keychain
+        self.session = session
+    }
+
+    static func makeSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        return URLSession(configuration: config)
     }
 
     func complete(prompt: String) async throws -> String {
-        let apiKey = try keychain.readString(account: AppConstants.KeychainAccounts.openAIKey) ?? ""
+        let config = settings.config(for: .openAI)
+
+        let apiKey = (try keychain.readString(account: ModelProviderID.openAI.keychainAccount) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else { throw OpenAIError.missingAPIKey }
 
-        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        let url: URL
+        do {
+            url = try config.endpointURL()
+        } catch {
+            throw OpenAIError.invalidEndpoint(error.localizedDescription)
+        }
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body = ChatCompletionsRequest(
-            model: settings.selectedModel.rawValue,
+            model: config.defaultModel,
             messages: [
                 .init(role: "system", content: settings.baseAIInstructions),
                 .init(role: "user", content: prompt)
@@ -45,14 +53,13 @@ final class OpenAIClient {
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await session.data(for: request)
-        } catch let error as NSError where error.code == NSURLErrorTimedOut {
+        } catch let error as URLError where error.code == .timedOut {
             throw OpenAIError.timeout
         }
 
         guard let http = response as? HTTPURLResponse else { throw OpenAIError.invalidResponse }
 
         if !(200...299).contains(http.statusCode) {
-            // Try to parse OpenAI error payload.
             if let apiError = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
                 throw OpenAIError.api(message: apiError.error.message)
             }
@@ -60,7 +67,7 @@ final class OpenAIClient {
         }
 
         let decoded = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
-        let text = decoded.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let text = decoded.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if text.isEmpty { throw OpenAIError.emptyResult }
         return text
     }
@@ -87,7 +94,7 @@ private struct ChatCompletionsResponse: Codable {
 
     struct Message: Codable {
         let role: String?
-        let content: String
+        let content: String?
     }
 }
 
@@ -101,8 +108,9 @@ private struct OpenAIErrorResponse: Codable {
 
 // MARK: - Errors
 
-enum OpenAIError: LocalizedError {
+enum OpenAIError: LocalizedError, Equatable {
     case missingAPIKey
+    case invalidEndpoint(String)
     case http(status: Int)
     case api(message: String)
     case invalidResponse
@@ -112,7 +120,9 @@ enum OpenAIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "Missing OpenAI API key. Set it in Settings."
+            return "Missing OpenAI API key. Add it in Settings → Models."
+        case .invalidEndpoint(let reason):
+            return "The OpenAI endpoint in Settings → Models is invalid. \(reason)"
         case .http(let status):
             return "OpenAI request failed (HTTP \(status))."
         case .api(let message):
@@ -122,7 +132,7 @@ enum OpenAIError: LocalizedError {
         case .emptyResult:
             return "OpenAI returned an empty result."
         case .timeout:
-            return "Request timed out. Please check your network connection and try again."
+            return "Request timed out. Check your network connection and try again."
         }
     }
 }

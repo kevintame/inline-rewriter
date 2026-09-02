@@ -33,6 +33,33 @@ extension Hotkey {
         return flags
     }
 
+    /// Modifier mask in the form `RegisterEventHotKey` expects.
+    var carbonModifiers: UInt32 {
+        var mask: UInt32 = 0
+        for m in modifiers {
+            switch m {
+            case .command: mask |= UInt32(cmdKey)
+            case .option: mask |= UInt32(optionKey)
+            case .control: mask |= UInt32(controlKey)
+            case .shift: mask |= UInt32(shiftKey)
+            }
+        }
+        return mask
+    }
+
+    /// A global shortcut is registered system-wide and swallows the keystroke, so it must
+    /// include ⌘, ⌥, or ⌃ unless it is a function key. Otherwise a bare letter or ⇧+letter
+    /// would break ordinary typing in every app.
+    var isValidGlobalShortcut: Bool {
+        if Self.functionKeyCodes.contains(keyCode) { return true }
+        return modifiers.contains { $0 == .command || $0 == .option || $0 == .control }
+    }
+
+    static let functionKeyCodes: Set<Int> = [
+        kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6,
+        kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11, kVK_F12
+    ]
+
     /// Human-readable display string like "⌃⌥⇧⌘/" in standard macOS modifier order.
     var displayString: String {
         var s = ""

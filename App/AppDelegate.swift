@@ -1,9 +1,14 @@
 import Cocoa
 import SwiftUI
+import os.log
 
-/// Creates the menubar status item and coordinates popovers.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    let container = AppContainer()
+/// Creates the menubar status item and drives the rewrite flow:
+/// hotkey → capture selection → pick transformation → preview → replace.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    let container: AppContainer
+
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "App")
 
     private var statusItem: NSStatusItem!
 
@@ -12,279 +17,336 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let textPositionService = TextPositionService()
     private var anchorWindow: PopoverAnchorWindow?
-    private var isProcessingHotkey = false
+
+    /// One rewrite, from hotkey press to replace or cancel.
+    private final class RewriteSession {
+        let input: String
+        let backup: PasteboardService.PasteboardBackup?
+        let targetApp: NSRunningApplication?
+        let textBounds: CGRect?
+        let pickerViewModel: TransformationPickerViewModel
+
+        /// The popover this session expects to be on screen. When a popover closes and is
+        /// still the active one, the user dismissed it (click outside, app switch) rather
+        /// than the app moving to the next step.
+        weak var activePopover: NSPopover?
+
+        init(input: String,
+             backup: PasteboardService.PasteboardBackup?,
+             targetApp: NSRunningApplication?,
+             textBounds: CGRect?,
+             pickerViewModel: TransformationPickerViewModel) {
+            self.input = input
+            self.backup = backup
+            self.targetApp = targetApp
+            self.textBounds = textBounds
+            self.pickerViewModel = pickerViewModel
+        }
+    }
+
+    private var session: RewriteSession?
+    /// True while capturing the selection or pasting the result, when no popover is up
+    /// but a second hotkey press must still be ignored.
+    private var isBusy = false
+
+    override init() {
+        container = AppContainer()
+        super.init()
+    }
+
+    // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.mainMenu = MainMenu.make()
+
         setUpStatusItem()
         setUpPopovers()
+        configureWindows()
 
-        // Configure settings window
-        let settingsView = SettingsRootView(
-            settings: container.settingsStore,
-            keychain: container.keychain,
-            hotkeyManager: container.hotkeyManager,
-            alertPresenter: container.alertPresenter
-        )
-        SettingsWindowController.shared.configure(with: settingsView)
-
-        // Start listening for the global hotkey.
         container.hotkeyManager.onHotkey = { [weak self] in
             self?.handleHotkey()
         }
-        // Close the default SwiftUI WindowGroup window (preserve status item window)
-        let statusWindow = statusItem.button?.window
-        NSApp.windows.filter { $0 !== statusWindow }.forEach { $0.close() }
+        startHotkey()
 
-        // Show welcome window
-        WelcomeWindowController.shared.showWelcome()
-
-        if !container.hotkeyManager.start() {
-            container.alertPresenter.showError(
-                title: "Hotkey unavailable",
-                message: "Unable to register the global hotkey.\n\nRequired permissions:\n• Accessibility (for text selection)\n• Input Monitoring (for hotkey detection)\n\nEnable both in System Settings → Privacy & Security."
-            )
-        }
+        showWelcomeIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         container.hotkeyManager.stop()
     }
 
+    // MARK: - Setup
+
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "pencil.circle.fill", accessibilityDescription: "Inline Rewriter")
-            button.action = #selector(didClickStatusItem)
-            button.target = self
-        }
+        statusItem.button?.image = NSImage(systemSymbolName: "pencil.circle.fill", accessibilityDescription: "Inline Rewriter")
 
-        // Optional right-click menu.
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Inline Rewriter Settings…", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Welcome & Permissions…", action: #selector(openWelcome), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Inline Rewriter", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
-
-        // If you want left-click to open popover rather than menu, you’d remove `statusItem.menu`
-        // and handle clicks manually. Keeping this minimal for review.
     }
 
     private func setUpPopovers() {
-        transformationPopover.behavior = .transient
-        previewPopover.behavior = .transient
+        for popover in [transformationPopover, previewPopover] {
+            popover.behavior = .transient
+            popover.delegate = self
+        }
     }
 
-    @objc private func didClickStatusItem() {
-        // If using menu, this may not fire. Kept for future UX tweaks.
+    private func configureWindows() {
+        let settingsView = SettingsRootView(
+            settings: container.settingsStore,
+            keychain: container.keychain,
+            hotkeyManager: container.hotkeyManager,
+            launchAtLogin: container.launchAtLogin,
+            permission: container.accessibilityPermission
+        )
+        SettingsWindowController.shared.configure(with: settingsView)
+
+        let welcomeView = WelcomeView(
+            permission: container.accessibilityPermission,
+            settings: container.settingsStore,
+            keychain: container.keychain,
+            onOpenSettings: { [weak self] in
+                WelcomeWindowController.shared.close()
+                self?.openSettings()
+            },
+            onFinish: {
+                WelcomeWindowController.shared.close()
+            }
+        )
+        WelcomeWindowController.shared.configure(with: welcomeView) { [weak self] in
+            self?.container.settingsStore.hasCompletedOnboarding = true
+        }
     }
 
-    @objc private func openSettings() {
+    private func startHotkey() {
+        do {
+            try container.hotkeyManager.start()
+        } catch {
+            container.alertPresenter.showError(title: "Shortcut unavailable", message: error.localizedDescription)
+        }
+    }
+
+    private func showWelcomeIfNeeded() {
+        let settings = container.settingsStore
+        if !settings.hasCompletedOnboarding || !container.accessibilityPermission.isTrusted {
+            WelcomeWindowController.shared.showWelcome()
+        }
+    }
+
+    // MARK: - Menu actions
+
+    @objc func openSettings() {
         SettingsWindowController.shared.showSettings()
+    }
+
+    @objc private func openWelcome() {
+        WelcomeWindowController.shared.showWelcome()
     }
 
     @objc private func quit() {
         NSApp.terminate(nil)
     }
 
+    // MARK: - Flow
+
     private func handleHotkey() {
-        guard !isProcessingHotkey else { return }
-        isProcessingHotkey = true
+        guard !isBusy else { return }
 
-        // Dismiss any stale popovers before starting a new flow
-        transformationPopover.performClose(nil)
-        transformationPopover.contentViewController = nil
-        previewPopover.performClose(nil)
-        previewPopover.contentViewController = nil
-        anchorWindow?.orderOut(nil)
-
-        // Capture the frontmost app synchronously before the async task,
-        // so app focus changes during scheduling don't affect the target.
-        let targetApp = NSWorkspace.shared.frontmostApplication
-
-        Task { @MainActor in
-            do {
-                // 1) Try to copy selection (simulates ⌘C) and backup original clipboard
-                let backup = try container.pasteboardService.copySelectionToPasteboard()
-
-                // 2) Read plain text from pasteboard
-                guard let input = container.pasteboardService.readStringFromPasteboard(), !input.isEmpty else {
-                    container.alertPresenter.showError(title: "No text", message: "Could not read selected text from the clipboard.")
-                    isProcessingHotkey = false
-                    return
-                }
-
-                showTransformationPicker(for: input, backup: backup, targetApp: targetApp)
-            } catch {
-                container.alertPresenter.showError(title: "Permission required", message: error.localizedDescription)
-                isProcessingHotkey = false
-            }
-        }
-    }
-
-    @MainActor
-    private func showTransformationPicker(for input: String, backup: PasteboardService.PasteboardBackup?, targetApp: NSRunningApplication?) {
-        let viewModel = TransformationPickerViewModel(
-            inputText: input,
-            settings: container.settingsStore,
-            transformer: container.textTransformer,
-            pasteboardBackup: backup
-        )
-
-        viewModel.onCancel = { [weak self] in
-            self?.transformationPopover.performClose(nil)
-            self?.transformationPopover.contentViewController = nil
-            self?.anchorWindow?.orderOut(nil)
-            self?.isProcessingHotkey = false
-        }
-
-        viewModel.onDidTransform = { [weak self] result, retry in
-            self?.transformationPopover.performClose(nil)
-            self?.transformationPopover.contentViewController = nil
-            self?.anchorWindow?.orderOut(nil)
-            self?.showPreview(input: input, output: result, backup: viewModel.pasteboardBackup, retry: retry, targetApp: targetApp)
-        }
-
-        transformationPopover.contentViewController = NSHostingController(
-            rootView: TransformationPickerView(viewModel: viewModel)
-        )
-
-        present(popover: transformationPopover, targetApp: targetApp)
-    }
-
-    @MainActor
-    private func showPreview(input: String, output: String, backup: PasteboardService.PasteboardBackup?, retry: @escaping () -> Void, targetApp: NSRunningApplication?) {
-        let viewModel = PreviewViewModel(
-            inputText: input,
-            outputText: output,
-            pasteboardBackup: backup
-        )
-
-        viewModel.onCancel = { [weak self] in
-            self?.previewPopover.performClose(nil)
-            self?.previewPopover.contentViewController = nil
-            self?.anchorWindow?.orderOut(nil)
-            self?.isProcessingHotkey = false
-        }
-
-        viewModel.onRetry = { [weak self] in
-            self?.previewPopover.performClose(nil)
-            self?.previewPopover.contentViewController = nil
-            self?.anchorWindow?.orderOut(nil)
-            retry()
-        }
-
-        viewModel.onReplace = { [weak self] in
-            guard let self else { return }
-            // 1. Dismiss UI first
-            self.previewPopover.performClose(nil)
-            self.previewPopover.contentViewController = nil
-            self.anchorWindow?.orderOut(nil)
-
-            // 2. Delay for macOS to process dismissal + focus transfer
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                do {
-                    try self.container.pasteboardService.replaceSelection(
-                        with: viewModel.outputText,
-                        restoring: viewModel.pasteboardBackup,
-                        targetApp: targetApp
-                    )
-                } catch {
-                    self.container.alertPresenter.showError(
-                        title: "Replace Failed",
-                        message: error.localizedDescription
-                    )
-                }
-                self.isProcessingHotkey = false
-            }
-        }
-
-        previewPopover.contentViewController = NSHostingController(
-            rootView: PreviewView(viewModel: viewModel)
-        )
-
-        present(popover: previewPopover, targetApp: targetApp)
-    }
-
-    @MainActor
-    private func present(popover: NSPopover, targetApp: NSRunningApplication?) {
-        if popover.isShown {
-            popover.performClose(nil)
+        // Pressing the shortcut while a popover is up dismisses it.
+        if session != nil {
+            endSession(restoreClipboard: true)
             return
         }
 
-        // Try to get selected text position
-        if let bounds = textPositionService.getSelectedTextBounds(in: targetApp) {
-            presentAtTextLocation(popover: popover, bounds: bounds)
-        } else {
-            // Fallback to menu bar positioning
-            presentAtMenuBar(popover: popover)
+        // Capture the frontmost app before anything else so our own activation later
+        // does not change the paste target.
+        let targetApp = NSWorkspace.shared.frontmostApplication
+        isBusy = true
+
+        Task { @MainActor in
+            defer { isBusy = false }
+            do {
+                let capture = try await container.pasteboardService.captureSelection()
+                let bounds = textPositionService.getSelectedTextBounds(in: targetApp)
+                startSession(input: capture.text, backup: capture.backup, targetApp: targetApp, textBounds: bounds)
+            } catch {
+                presentError(error, fallbackTitle: "Couldn't read selection")
+            }
+        }
+    }
+
+    private func startSession(input: String,
+                              backup: PasteboardService.PasteboardBackup?,
+                              targetApp: NSRunningApplication?,
+                              textBounds: CGRect?) {
+        let viewModel = TransformationPickerViewModel(
+            inputText: input,
+            settings: container.settingsStore,
+            transformer: container.textTransformer
+        )
+        let session = RewriteSession(
+            input: input,
+            backup: backup,
+            targetApp: targetApp,
+            textBounds: textBounds,
+            pickerViewModel: viewModel
+        )
+        self.session = session
+
+        viewModel.onCancel = { [weak self] in
+            self?.endSession(restoreClipboard: true)
+        }
+        viewModel.onDidTransform = { [weak self, weak session] output, transformation in
+            guard let self, let session, self.session === session else { return }
+            self.showPreview(output: output, transformation: transformation, session: session)
         }
 
+        showPicker(for: session)
+    }
+
+    private func showPicker(for session: RewriteSession) {
+        transformationPopover.contentViewController = NSHostingController(
+            rootView: TransformationPickerView(viewModel: session.pickerViewModel)
+        )
+        session.activePopover = transformationPopover
+        present(transformationPopover, for: session)
+    }
+
+    private func showPreview(output: String, transformation: TextTransformation, session: RewriteSession) {
+        let viewModel = PreviewViewModel(outputText: output)
+
+        viewModel.onCancel = { [weak self] in
+            self?.endSession(restoreClipboard: true)
+        }
+        viewModel.onRetry = { [weak self, weak session] in
+            guard let self, let session, self.session === session else { return }
+            // Bring the picker back so the spinner and any error are visible, then re-run.
+            session.activePopover = self.transformationPopover
+            self.previewPopover.performClose(nil)
+            self.showPicker(for: session)
+            session.pickerViewModel.run(transformation)
+        }
+        viewModel.onReplace = { [weak self, weak session] in
+            guard let self, let session, self.session === session else { return }
+            self.replace(output: output, session: session)
+        }
+
+        previewPopover.contentViewController = NSHostingController(rootView: PreviewView(viewModel: viewModel))
+
+        // Mark the preview active before closing the picker so the picker's close is
+        // treated as a step, not a cancel.
+        session.activePopover = previewPopover
+        transformationPopover.performClose(nil)
+        present(previewPopover, for: session)
+    }
+
+    private func replace(output: String, session: RewriteSession) {
+        // The session is over from the flow's point of view; clearing it first means the
+        // preview's close callback does not restore the clipboard under us.
+        self.session = nil
+        isBusy = true
+        previewPopover.performClose(nil)
+        anchorWindow?.orderOut(nil)
+
+        Task { @MainActor in
+            defer { isBusy = false }
+            // Give macOS a moment to finish dismissing the popover and hand focus back.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            do {
+                try await container.pasteboardService.replaceSelection(
+                    with: output,
+                    restoring: session.backup,
+                    targetApp: session.targetApp
+                )
+            } catch {
+                presentError(error, fallbackTitle: "Replace failed")
+            }
+        }
+    }
+
+    private func endSession(restoreClipboard: Bool) {
+        guard let session else { return }
+        self.session = nil
+
+        session.pickerViewModel.cancelInFlight()
+        transformationPopover.performClose(nil)
+        previewPopover.performClose(nil)
+        anchorWindow?.orderOut(nil)
+
+        if restoreClipboard {
+            container.pasteboardService.restore(session.backup)
+        }
+    }
+
+    private func presentError(_ error: Error, fallbackTitle: String) {
+        if case PasteboardService.PasteboardError.accessibilityPermissionRequired = error {
+            // The Welcome window has the grant button and live status; more useful than an alert.
+            WelcomeWindowController.shared.showWelcome()
+            return
+        }
+        logger.error("\(fallbackTitle): \(error.localizedDescription)")
+        container.alertPresenter.showError(title: fallbackTitle, message: error.localizedDescription)
+    }
+
+    // MARK: - NSPopoverDelegate
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let popover = notification.object as? NSPopover else { return }
+        popover.contentViewController = nil
+
+        if let session, session.activePopover === popover {
+            // Closed by the user rather than by the flow moving on.
+            endSession(restoreClipboard: true)
+        }
+    }
+
+    // MARK: - Presentation
+
+    private func present(_ popover: NSPopover, for session: RewriteSession) {
+        if let bounds = session.textBounds {
+            presentAtTextLocation(popover, bounds: bounds)
+        } else {
+            presentAtMenuBar(popover)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func presentAtTextLocation(popover: NSPopover, bounds: CGRect) {
-        NSLog("📍 presentAtTextLocation - bounds: \(bounds)")
-
-        // Create or reuse anchor window
+    private func presentAtTextLocation(_ popover: NSPopover, bounds: CGRect) {
         if anchorWindow == nil {
             anchorWindow = PopoverAnchorWindow()
         }
-
         guard let anchor = anchorWindow else { return }
 
-        // Determine which screen contains the selected text
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(bounds.origin) })
-              ?? NSScreen.main else { return }
-
-        // Calculate vertical position relative to screen (0.0 = bottom, 1.0 = top)
-        let screenFrame = screen.frame
-        let textCenterY = bounds.midY
-        let relativeY = (textCenterY - screenFrame.minY) / screenFrame.height
-
-        // Text in upper half → show popup BELOW; text in lower half → show popup ABOVE
-        let showBelow = relativeY > 0.5
-
-        NSLog("📍 Text position - relativeY: \(relativeY), showBelow: \(showBelow)")
-
-        // Position anchor at the appropriate edge of text selection
-        let anchorSize = CGSize(width: 20, height: 20)
-        let anchorPoint: CGPoint
-
-        if showBelow {
-            // Anchor at bottom edge of text, centered horizontally
-            anchorPoint = CGPoint(
-                x: bounds.midX - anchorSize.width / 2,
-                y: bounds.minY - anchorSize.height / 2
-            )
-        } else {
-            // Anchor at top edge of text, centered horizontally
-            anchorPoint = CGPoint(
-                x: bounds.midX - anchorSize.width / 2,
-                y: bounds.maxY - anchorSize.height / 2
-            )
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(bounds.origin) }) ?? NSScreen.main else {
+            presentAtMenuBar(popover)
+            return
         }
 
-        NSLog("📍 Anchor positioned at: \(anchorPoint)")
+        // Text in the upper half of the screen gets the popover below it, and vice versa.
+        let relativeY = (bounds.midY - screen.frame.minY) / screen.frame.height
+        let showBelow = relativeY > 0.5
+
+        let anchorSize = CGSize(width: 20, height: 20)
+        let anchorPoint = CGPoint(
+            x: bounds.midX - anchorSize.width / 2,
+            y: (showBelow ? bounds.minY : bounds.maxY) - anchorSize.height / 2
+        )
+
         anchor.positionAt(anchorPoint, size: anchorSize)
         anchor.orderFront(nil)
 
-        // Show popover anchored to center of anchor window
-        if let contentView = anchor.contentView {
-            let anchorRect = CGRect(
-                x: anchorSize.width / 2,
-                y: anchorSize.height / 2,
-                width: 1,
-                height: 1
-            )
-            let edge: NSRectEdge = showBelow ? .minY : .maxY
-            popover.show(relativeTo: anchorRect, of: contentView, preferredEdge: edge)
-        }
+        guard let contentView = anchor.contentView else { return }
+        let anchorRect = CGRect(x: anchorSize.width / 2, y: anchorSize.height / 2, width: 1, height: 1)
+        popover.show(relativeTo: anchorRect, of: contentView, preferredEdge: showBelow ? .minY : .maxY)
     }
 
-    private func presentAtMenuBar(popover: NSPopover) {
-        // Original behavior - show at menu bar button
+    private func presentAtMenuBar(_ popover: NSPopover) {
         guard let button = statusItem.button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
