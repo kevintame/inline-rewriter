@@ -130,4 +130,39 @@ struct OpenAIClientTests {
             try await client.complete(prompt: "x")
         }
     }
+
+    @Test func testConnectionUsesGivenConfigAndKeyNotSavedOnes() async throws {
+        let (client, _) = makeClient(apiKey: "sk-saved")
+        StubURLProtocol.handler = respond(status: 200, json: Self.successBody)
+
+        var draft = ModelProviderConfig.defaultConfig(for: .openAI)
+        draft.host = "proxy.example.com"
+        draft.defaultModel = "draft-model"
+        try await client.testConnection(config: draft, apiKey: " sk-draft ")
+
+        let request = try #require(StubURLProtocol.recordedRequests.first)
+        #expect(request.url?.absoluteString == "https://proxy.example.com/v1/chat/completions")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-draft")
+        let body = try JSONSerialization.jsonObject(with: StubURLProtocol.body(of: request)) as? [String: Any]
+        #expect(body?["model"] as? String == "draft-model")
+    }
+
+    @Test func testConnectionRejectsBlankKeyWithoutSendingRequest() async {
+        let (client, _) = makeClient(apiKey: "sk-saved")
+        StubURLProtocol.handler = respond(status: 200, json: Self.successBody)
+
+        await #expect(throws: OpenAIError.missingAPIKey) {
+            try await client.testConnection(config: .defaultConfig(for: .openAI), apiKey: "   ")
+        }
+        #expect(StubURLProtocol.recordedRequests.isEmpty)
+    }
+
+    @Test func testConnectionSurfacesAPIErrors() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 401, json: #"{"error":{"message":"Incorrect API key provided"}}"#)
+
+        await #expect(throws: OpenAIError.api(message: "Incorrect API key provided")) {
+            try await client.testConnection(config: .defaultConfig(for: .openAI), apiKey: "sk-bad")
+        }
+    }
 }

@@ -5,6 +5,10 @@ macOS menu bar app that rewrites selected text in place using an OpenAI-compatib
 Select text in any app, press the shortcut (default ⌥⌘/), pick a prompt, preview the result,
 and replace the selection. Your clipboard is restored afterwards.
 
+In the picker, ↑/↓ and Return choose a prompt, or press 1–9 to run one directly. The preview
+is editable before you replace: Return replaces, ⌥↩ inserts a newline, and Copy puts the result
+on the clipboard instead of pasting it.
+
 ## Requirements
 
 - macOS 13 or later
@@ -65,8 +69,11 @@ get Keychain prompts on each update. Distribute with a Developer ID and notarize
 ## Settings
 
 - **General**: shortcut recorder (must include ⌘, ⌥, or ⌃), launch at login, Accessibility
-  status, system prompt sent with every request
+  status
 - **Models**: API key, host, path, and model for OpenAI. Host accepts any
   Chat-Completions-compatible server; HTTPS is enforced except for `http://localhost`.
-  Anthropic and Gemini configs exist in the data model but have no client yet and are hidden.
-- **Prompts**: the preset "Rewrite" plus your own. Templates must contain `{{text}}`.
+  "Test Connection" sends a tiny request with the unsaved values so a bad key or model
+  fails here rather than in the popover. Anthropic and Gemini configs exist in the data
+  model but have no client yet and are hidden.
+- **Prompts**: the system instructions sent with every request, then the preset "Rewrite"
+  plus your own. Templates must contain `{{text}}`. The preset can be edited but not deleted.

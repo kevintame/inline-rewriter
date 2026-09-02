@@ -24,9 +24,18 @@ final class OpenAIClient {
 
     func complete(prompt: String) async throws -> String {
         let config = settings.config(for: .openAI)
-
         let apiKey = (try keychain.readString(account: ModelProviderID.openAI.keychainAccount) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await send(prompt: prompt, config: config, apiKey: apiKey)
+    }
+
+    /// Verifies that `config` and `apiKey` can complete a request, without saving either.
+    /// Settings calls this with its unsaved draft so the user can check before committing.
+    func testConnection(config: ModelProviderConfig, apiKey: String) async throws {
+        _ = try await send(prompt: "Reply with the single word OK.", config: config, apiKey: apiKey)
+    }
+
+    private func send(prompt: String, config: ModelProviderConfig, apiKey rawKey: String) async throws -> String {
+        let apiKey = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else { throw OpenAIError.missingAPIKey }
 
         let url: URL

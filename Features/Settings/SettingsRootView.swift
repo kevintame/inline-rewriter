@@ -6,6 +6,7 @@ struct SettingsRootView: View {
     let hotkeyManager: HotkeyManager
     @ObservedObject var launchAtLogin: LaunchAtLoginService
     @ObservedObject var permission: AccessibilityPermissionMonitor
+    let testConnection: (ModelProviderConfig, String) async throws -> Void
 
     var body: some View {
         TabView {
@@ -21,7 +22,8 @@ struct SettingsRootView: View {
 
             ModelsSettingsView(
                 settings: settings,
-                keychain: keychain
+                keychain: keychain,
+                testConnection: testConnection
             )
             .tabItem {
                 Label("Models", systemImage: "server.rack")

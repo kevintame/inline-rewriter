@@ -208,14 +208,16 @@ struct GeneralSettingsView: View {
                                 validationMessage: $hotkeyMessage
                             )
                             .frame(height: 26)
-                            Button {
-                                applyHotkey(.default)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
+                            if settings.hotkey != .default {
+                                Button {
+                                    applyHotkey(.default)
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Reset to the default shortcut (\(Hotkey.default.displayString))")
                             }
-                            .buttonStyle(.plain)
-                            .help("Reset to default shortcut")
                         }
 
                         if let hotkeyMessage {
@@ -282,24 +284,6 @@ struct GeneralSettingsView: View {
                             Button("Open System Settings") { permission.openSystemSettings() }
                                 .controlSize(.small)
                         }
-                    }
-                    .padding(4)
-                }
-
-                // MARK: - Base AI Instructions
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Base AI Instructions", systemImage: "text.quote")
-                            .font(.headline)
-
-                        Text("System prompt sent with every AI request. Customize the assistant's behavior.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        TextEditor(text: $settings.baseAIInstructions)
-                            .font(.body)
-                            .frame(minHeight: 80)
-                            .border(Color.secondary.opacity(0.3))
                     }
                     .padding(4)
                 }

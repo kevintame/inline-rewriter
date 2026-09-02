@@ -21,6 +21,15 @@ struct TextTransformation: Identifiable, Codable, Equatable {
         promptTemplate.replacingOccurrences(of: "{{text}}", with: text)
     }
 
+    /// One-line version of the template for lists: the `{{text}}` placeholder removed and
+    /// whitespace collapsed, so a multi-line template reads as a sentence.
+    var promptSummary: String {
+        promptTemplate
+            .replacingOccurrences(of: "{{text}}", with: "")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
     func validate() throws {
         guard promptTemplate.contains("{{text}}") else {
             throw ValidationError.missingPlaceholder

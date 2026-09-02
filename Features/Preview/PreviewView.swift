@@ -1,41 +1,76 @@
 import SwiftUI
 
-/// Popover showing transformed text.
+/// Popover showing transformed text, editable before it is pasted back.
 struct PreviewView: View {
     @ObservedObject var viewModel: PreviewViewModel
     @State private var eventMonitor: Any?
+    @State private var showOriginal = false
+
+    private static let width: CGFloat = 520
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Preview")
-                .font(.headline)
-
-            ScrollView {
-                Text(viewModel.outputText)
-                    .font(.body)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text("Preview")
+                    .font(.headline)
+                Text("· \(viewModel.transformationName)")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
             }
-            .frame(width: 520, height: 260)
+
+            DisclosureGroup("Original", isExpanded: $showOriginal) {
+                ScrollView {
+                    Text(viewModel.inputText)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(6)
+                }
+                .frame(height: 100)
+                .border(Color.secondary.opacity(0.3))
+            }
+
+            TextEditor(text: $viewModel.outputText)
+                .font(.body)
+                .frame(height: showOriginal ? 170 : 260)
+                .border(Color.secondary.opacity(0.3))
 
             HStack {
                 Button("Cancel") { viewModel.cancel() }
                     .keyboardShortcut(.cancelAction)
 
+                Text("↩ replaces · ⌥↩ new line")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
                 Spacer()
+
+                Button("Copy") { viewModel.copy() }
+                    .disabled(viewModel.isOutputEmpty)
+                    .help("Copy the result to the clipboard and close without replacing")
 
                 Button("Retry") { viewModel.retry() }
 
                 Button("Replace") { viewModel.replace() }
-                    .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isOutputEmpty)
             }
         }
+        .frame(width: Self.width)
         .padding(14)
         .onAppear {
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
-                case 36: // Return/Enter
+                case 36, 76: // Return, keypad Enter
+                    // Return commits even while the editor has focus, so the fast path stays
+                    // hotkey → Return → Return. ⌥↩ falls through to the editor as a newline.
+                    let modifiers = event.modifierFlags
+                        .intersection(.deviceIndependentFlagsMask)
+                        .subtracting([.numericPad, .function])
+                    if modifiers.contains(.option) { return event }
                     viewModel.replace()
                     return nil
                 case 53: // Escape

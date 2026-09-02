@@ -7,6 +7,9 @@ final class TransformationPickerViewModel: ObservableObject {
 
     @Published var isBusy: Bool = false
     @Published var errorMessage: String?
+    /// True when the last failure is one Settings can fix (a missing API key), so the view
+    /// can offer a shortcut there instead of a dead end.
+    @Published var errorNeedsSettings: Bool = false
     @Published var selectedIndex: Int = 0
 
     private let settings: SettingsStore
@@ -14,6 +17,7 @@ final class TransformationPickerViewModel: ObservableObject {
     private var currentTask: Task<Void, Never>?
 
     var onCancel: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
 
     /// Called when a transformation succeeds, with the output and the transformation that
     /// produced it so the caller can offer a retry.
@@ -29,9 +33,27 @@ final class TransformationPickerViewModel: ObservableObject {
         settings.transformations
     }
 
+    /// The captured text on one line, so the user can confirm the right selection was read.
+    var inputSummary: String {
+        inputText
+            .prefix(300)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    var inputLengthDescription: String {
+        let count = inputText.count
+        return count == 1 ? "1 character" : "\(count) characters"
+    }
+
     func cancel() {
         cancelInFlight()
         onCancel?()
+    }
+
+    func openSettings() {
+        cancelInFlight()
+        onOpenSettings?()
     }
 
     /// Cancels any request in progress without notifying `onCancel`.
@@ -45,6 +67,7 @@ final class TransformationPickerViewModel: ObservableObject {
         currentTask?.cancel()
         isBusy = true
         errorMessage = nil
+        errorNeedsSettings = false
 
         currentTask = Task { [weak self] in
             guard let self else { return }
@@ -58,8 +81,17 @@ final class TransformationPickerViewModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 isBusy = false
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+                errorNeedsSettings = (error as? OpenAIError) == .missingAPIKey
             }
         }
+    }
+
+    /// Runs the transformation at `index`, ignoring the request while one is already in flight
+    /// so a stray Return or number key cannot restart it.
+    func run(at index: Int) {
+        guard !isBusy, transformations.indices.contains(index) else { return }
+        selectedIndex = index
+        run(transformations[index])
     }
 
     func selectNext() {
@@ -72,7 +104,6 @@ final class TransformationPickerViewModel: ObservableObject {
     }
 
     func runSelected() {
-        guard transformations.indices.contains(selectedIndex) else { return }
-        run(transformations[selectedIndex])
+        run(at: selectedIndex)
     }
 }

@@ -34,4 +34,14 @@ struct TextTransformationTests {
         try TextTransformation.presetRewrite.validate()
         #expect(TextTransformation.presetRewrite.isPreset)
     }
+
+    @Test func promptSummaryDropsPlaceholderAndCollapsesWhitespace() {
+        let t = TextTransformation(name: "Fix", promptTemplate: "Fix the grammar\n\nin this:\n\n{{text}}")
+        #expect(t.promptSummary == "Fix the grammar in this:")
+    }
+
+    @Test func promptSummaryOfPlaceholderOnlyTemplateIsEmpty() {
+        let t = TextTransformation(name: "Echo", promptTemplate: "  {{text}}  ")
+        #expect(t.promptSummary == "")
+    }
 }

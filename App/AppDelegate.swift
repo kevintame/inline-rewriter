@@ -1,4 +1,5 @@
 import Cocoa
+import Combine
 import SwiftUI
 import os.log
 
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         /// still the active one, the user dismissed it (click outside, app switch) rather
         /// than the app moving to the next step.
         weak var activePopover: NSPopover?
+        var busyObservation: AnyCancellable?
 
         init(input: String,
              backup: PasteboardService.PasteboardBackup?,
@@ -47,7 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var session: RewriteSession?
     /// True while capturing the selection or pasting the result, when no popover is up
     /// but a second hotkey press must still be ignored.
-    private var isBusy = false
+    private var isBusy = false {
+        didSet { refreshStatusItemBusy() }
+    }
+    /// Mirrors the picker's in-flight request so the menu bar icon can show progress.
+    private var requestInFlight = false {
+        didSet { refreshStatusItemBusy() }
+    }
 
     override init() {
         container = AppContainer()
@@ -103,7 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             keychain: container.keychain,
             hotkeyManager: container.hotkeyManager,
             launchAtLogin: container.launchAtLogin,
-            permission: container.accessibilityPermission
+            permission: container.accessibilityPermission,
+            testConnection: container.openAIClient.testConnection
         )
         SettingsWindowController.shared.configure(with: settingsView)
 
@@ -202,9 +211,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         viewModel.onCancel = { [weak self] in
             self?.endSession(restoreClipboard: true)
         }
+        viewModel.onOpenSettings = { [weak self] in
+            self?.endSession(restoreClipboard: true)
+            self?.openSettings()
+        }
         viewModel.onDidTransform = { [weak self, weak session] output, transformation in
             guard let self, let session, self.session === session else { return }
             self.showPreview(output: output, transformation: transformation, session: session)
+        }
+        session.busyObservation = viewModel.$isBusy.sink { [weak self] busy in
+            self?.requestInFlight = busy
         }
 
         showPicker(for: session)
@@ -219,7 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func showPreview(output: String, transformation: TextTransformation, session: RewriteSession) {
-        let viewModel = PreviewViewModel(outputText: output)
+        let viewModel = PreviewViewModel(
+            inputText: session.input,
+            outputText: output,
+            transformationName: transformation.name
+        )
 
         viewModel.onCancel = { [weak self] in
             self?.endSession(restoreClipboard: true)
@@ -232,9 +252,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.showPicker(for: session)
             session.pickerViewModel.run(transformation)
         }
-        viewModel.onReplace = { [weak self, weak session] in
+        viewModel.onReplace = { [weak self, weak session] text in
             guard let self, let session, self.session === session else { return }
-            self.replace(output: output, session: session)
+            self.replace(output: text, session: session)
+        }
+        viewModel.onCopy = { [weak self, weak session] text in
+            guard let self, let session, self.session === session else { return }
+            // The result becomes the clipboard, so the backup is deliberately not restored.
+            self.endSession(restoreClipboard: false)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
         }
 
         previewPopover.contentViewController = NSHostingController(rootView: PreviewView(viewModel: viewModel))
@@ -250,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // The session is over from the flow's point of view; clearing it first means the
         // preview's close callback does not restore the clipboard under us.
         self.session = nil
+        requestInFlight = false
         isBusy = true
         previewPopover.performClose(nil)
         anchorWindow?.orderOut(nil)
@@ -273,6 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func endSession(restoreClipboard: Bool) {
         guard let session else { return }
         self.session = nil
+        requestInFlight = false
 
         session.pickerViewModel.cancelInFlight()
         transformationPopover.performClose(nil)
@@ -292,6 +322,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         logger.error("\(fallbackTitle): \(error.localizedDescription)")
         container.alertPresenter.showError(title: fallbackTitle, message: error.localizedDescription)
+    }
+
+    /// Dims the menu bar icon while the app is reading, waiting on the model, or pasting.
+    private func refreshStatusItemBusy() {
+        statusItem?.button?.appearsDisabled = isBusy || requestInFlight
     }
 
     // MARK: - NSPopoverDelegate

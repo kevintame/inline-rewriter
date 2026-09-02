@@ -6,6 +6,8 @@ struct ProviderDetailView: View {
     let keychain: KeychainStoring
     let showsDefaultVendorToggle: Bool
     let onSetDefaultVendor: () -> Void
+    /// Sends a minimal request with the given unsaved config and key.
+    let testConnection: (ModelProviderConfig, String) async throws -> Void
 
     @State private var apiKey: String = ""
     @State private var showAPIKey: Bool = false
@@ -15,6 +17,12 @@ struct ProviderDetailView: View {
     @State private var draftIsDefault: Bool = false
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    @State private var isTesting = false
+
+    private enum DraftError: LocalizedError {
+        case emptyModel
+        var errorDescription: String? { "Model cannot be empty." }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -26,10 +34,10 @@ struct ProviderDetailView: View {
                 Section {
                     HStack {
                         if showAPIKey {
-                            TextField("API Key", text: $apiKey)
+                            TextField("sk-…", text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
                         } else {
-                            SecureField("API Key", text: $apiKey)
+                            SecureField("sk-…", text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
                         }
                         Button(action: { showAPIKey.toggle() }) {
@@ -46,18 +54,18 @@ struct ProviderDetailView: View {
                 }
 
                 Section {
-                    TextField("Host", text: $draftHost)
+                    TextField(providerID.defaultHost, text: $draftHost)
                         .textFieldStyle(.roundedBorder)
                 } header: {
                     Text("Host")
                 } footer: {
-                    Text("Requests always use HTTPS. Point this at any compatible server, such as a proxy.")
+                    Text("HTTPS is used, except for http://localhost. Point this at any compatible server, such as a proxy.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Section {
-                    TextField("Path", text: $draftSubPath)
+                    TextField(providerID.defaultSubPath, text: $draftSubPath)
                         .textFieldStyle(.roundedBorder)
                 } header: {
                     Text("Path")
@@ -65,7 +73,7 @@ struct ProviderDetailView: View {
 
                 Section {
                     HStack {
-                        TextField("Model", text: $draftModel)
+                        TextField(providerID.availableModels.first ?? "Model", text: $draftModel)
                             .textFieldStyle(.roundedBorder)
                         Menu {
                             ForEach(providerID.availableModels, id: \.self) { model in
@@ -109,10 +117,25 @@ struct ProviderDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
+                Button(action: test) {
+                    HStack(spacing: 4) {
+                        if isTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "bolt")
+                        }
+                        Text(isTesting ? "Testing…" : "Test Connection")
+                    }
+                }
+                .disabled(isTesting)
+                .help("Send a tiny request with these values to check the key, host, and model")
+
                 if let statusMessage {
                     Text(statusMessage)
                         .font(.caption)
                         .foregroundStyle(statusIsError ? Color.red : Color.secondary)
+                        .lineLimit(2)
                         .transition(.opacity)
                 }
 
@@ -137,20 +160,23 @@ struct ProviderDetailView: View {
         }
     }
 
-    private func save() {
+    /// The form fields as a config, validated the same way for Save and Test.
+    private func draftConfig() throws -> ModelProviderConfig {
         let trimmedModel = draftModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedModel.isEmpty else {
-            showStatus("Model cannot be empty.", isError: true)
-            return
-        }
+        guard !trimmedModel.isEmpty else { throw DraftError.emptyModel }
 
         var updated = config
         updated.host = draftHost.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.subPath = draftSubPath.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.defaultModel = trimmedModel
+        _ = try updated.endpointURL()
+        return updated
+    }
 
+    private func save() {
+        let updated: ModelProviderConfig
         do {
-            _ = try updated.endpointURL()
+            updated = try draftConfig()
         } catch {
             showStatus(error.localizedDescription, isError: true)
             return
@@ -180,6 +206,29 @@ struct ProviderDetailView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if statusMessage == "Saved" {
                 statusMessage = nil
+            }
+        }
+    }
+
+    private func test() {
+        let draft: ModelProviderConfig
+        do {
+            draft = try draftConfig()
+        } catch {
+            showStatus(error.localizedDescription, isError: true)
+            return
+        }
+
+        isTesting = true
+        showStatus("Connecting…", isError: false)
+        let key = apiKey
+        Task { @MainActor in
+            defer { isTesting = false }
+            do {
+                try await testConnection(draft, key)
+                showStatus("Connected · \(draft.defaultModel)", isError: false)
+            } catch {
+                showStatus(error.localizedDescription, isError: true)
             }
         }
     }

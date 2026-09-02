@@ -3,6 +3,7 @@ import SwiftUI
 struct ModelsSettingsView: View {
     @ObservedObject var settings: SettingsStore
     let keychain: KeychainStoring
+    let testConnection: (ModelProviderConfig, String) async throws -> Void
 
     @State private var selectedProvider: ModelProviderID? = ModelProviderID.supported.first
 
@@ -39,7 +40,8 @@ struct ModelsSettingsView: View {
                     config: $settings.providerConfigs[bindingIndex],
                     keychain: keychain,
                     showsDefaultVendorToggle: providers.count > 1,
-                    onSetDefaultVendor: { settings.setDefaultVendor(selected) }
+                    onSetDefaultVendor: { settings.setDefaultVendor(selected) },
+                    testConnection: testConnection
                 )
                 .id(selected)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
