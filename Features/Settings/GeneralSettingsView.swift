@@ -44,6 +44,45 @@ class HotkeyRecorderNSView: NSView {
 
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
+    private var windowObservers: [NSObjectProtocol] = []
+
+    deinit {
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    // The global hotkey is unregistered while recording. A window does not resign its
+    // first responder when it closes or loses key status, so without these hooks an
+    // abandoned recording would leave the shortcut dead until Settings was reopened.
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        stopRecording()
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+        windowObservers = []
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
+            let observer = NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.stopRecording()
+                }
+            }
+            windowObservers.append(observer)
+        }
+    }
+
+    /// While recording, shortcuts such as ⌘W or ⌘Q are captured instead of being sent to
+    /// the main menu, where they would close the window or quit the app mid-recording.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard isRecording, event.type == .keyDown, window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        keyDown(with: event)
+        return true
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -157,6 +196,15 @@ class HotkeyRecorderNSView: NSView {
             setRecording(false)
         }
         return super.resignFirstResponder()
+    }
+
+    /// Leaves recording mode without recording anything, which re-registers the hotkey.
+    private func stopRecording() {
+        guard isRecording else { return }
+        setRecording(false)
+        if window?.firstResponder === self {
+            window?.makeFirstResponder(nil)
+        }
     }
 
     private func setRecording(_ recording: Bool) {
