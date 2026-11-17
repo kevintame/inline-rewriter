@@ -426,4 +426,92 @@ struct PasteboardServiceTests {
         service.restoreClipboard()
         #expect(h.clipboard == "original")
     }
+
+    // MARK: Ending a transaction mid-operation (quitting)
+
+    @Test func quittingWhileWaitingForTheCopyRestoresTheClipboard() async {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        h.onCopy = nil
+        let service = h.makeService()
+
+        // The quit handler runs during the first poll, before anything was copied.
+        var sleeps = 0
+        h.onSleep = {
+            sleeps += 1
+            if sleeps == 1 { service.restoreClipboard() }
+        }
+        await #expect(throws: CancellationError.self) {
+            try await service.captureSelection(from: h.target)
+        }
+        #expect(h.clipboard == "original")
+        #expect(!service.hasPendingTransaction)
+    }
+
+    @Test func quittingAfterTheCopyButBeforeCaptureFinishesRestoresTheClipboard() async {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+
+        // The target app has copied; the quit handler runs during the settle wait.
+        var clipboardAtQuit: String?
+        h.onSleep = {
+            guard service.hasPendingTransaction else { return }
+            service.restoreClipboard()
+            clipboardAtQuit = h.clipboard
+        }
+        await #expect(throws: CancellationError.self) {
+            try await service.captureSelection(from: h.target)
+        }
+        #expect(clipboardAtQuit == "original")
+        #expect(h.clipboard == "original")
+        #expect(!service.hasPendingTransaction)
+    }
+
+    @Test func captureEndedFromOutsideDoesNotTouchTheClipboardAgain() async {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+
+        var changeCountAfterQuit: Int?
+        h.onSleep = {
+            guard service.hasPendingTransaction else { return }
+            service.restoreClipboard()
+            changeCountAfterQuit = h.pasteboard.changeCount
+        }
+        _ = try? await service.captureSelection(from: h.target)
+        #expect(h.pasteboard.changeCount == changeCountAfterQuit)
+    }
+
+    @Test func quittingDuringActivationRestoresAndNothingIsPasted() async throws {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+        _ = try await service.captureSelection(from: h.target)
+
+        h.frontmost = 1
+        h.onSleep = { service.restoreClipboard() }
+        await #expect(throws: CancellationError.self) {
+            try await service.replaceSelection(with: "rewritten", in: h.target)
+        }
+        #expect(h.pastes.isEmpty)
+        #expect(h.clipboard == "original")
+    }
+
+    @Test func quittingAfterThePasteRestoresTheClipboard() async throws {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+        _ = try await service.captureSelection(from: h.target)
+
+        var clipboardAtQuit: String?
+        h.onSleep = {
+            guard !h.pastes.isEmpty, service.hasPendingTransaction else { return }
+            service.restoreClipboard()
+            clipboardAtQuit = h.clipboard
+        }
+        try await service.replaceSelection(with: "rewritten", in: h.target)
+        #expect(clipboardAtQuit == "original")
+        #expect(h.clipboard == "original")
+    }
 }

@@ -177,11 +177,19 @@ final class PasteboardService {
         /// `changeCount` after this service's most recent write. The clipboard is still
         /// ours only while it reports this value.
         var ownedChangeCount: Int
+        /// True from clearing the clipboard until the capture has finished reading the
+        /// selection. During that time any change is attributed to the ⌘C just posted, so
+        /// the backup is restored whatever the change count says.
+        var isCapturing = false
+        /// Distinguishes this transaction from a later one, so an operation that resumes
+        /// after its transaction was ended (the app is quitting) can tell and stop.
+        let id: Int
     }
 
     private let pasteboard: ClipboardAccess
     private let environment: Environment
     private var transaction: Transaction?
+    private var lastTransactionID = 0
 
     init(pasteboard: ClipboardAccess = NSPasteboard.general, environment: Environment = .live) {
         self.pasteboard = pasteboard
@@ -208,7 +216,7 @@ final class PasteboardService {
         let backup = pasteboard.snapshot()
         pasteboard.clear()
         let clearedChangeCount = pasteboard.changeCount
-        transaction = Transaction(backup: backup, ownedChangeCount: clearedChangeCount)
+        let id = beginTransaction(backup: backup, ownedChangeCount: clearedChangeCount, isCapturing: true)
 
         do {
             try environment.postCommandKey(VirtualKey.c)
@@ -217,9 +225,11 @@ final class PasteboardService {
             var polls = 0
             while pasteboard.changeCount == clearedChangeCount && polls < Timing.copyPolls {
                 try await environment.sleep(Timing.pollInterval)
+                try requireActive(id)
                 polls += 1
             }
             try await environment.sleep(Timing.copySettle)
+            try requireActive(id)
 
             let text = pasteboard.string ?? ""
             guard pasteboard.changeCount != clearedChangeCount, !text.isEmpty else {
@@ -228,6 +238,7 @@ final class PasteboardService {
 
             // The selection is now what this service "owns" on the clipboard.
             transaction?.ownedChangeCount = pasteboard.changeCount
+            transaction?.isCapturing = false
             logger.info("Captured selection (\(text.count) chars)")
             return text
         } catch {
@@ -235,9 +246,12 @@ final class PasteboardService {
             // posted (possibly a non-text copy), so the user's own contents go back.
             // Known limit: a copy made by another app inside this half-second window
             // cannot be told apart from the target app's and is replaced by the backup.
-            logger.info("Capture failed; restoring clipboard")
-            transaction?.ownedChangeCount = pasteboard.changeCount
-            restoreClipboard()
+            // If the transaction was already ended from outside (the app is quitting), the
+            // clipboard has been dealt with and must not be touched again.
+            if transaction?.id == id {
+                logger.info("Capture failed; restoring clipboard")
+                restoreClipboard()
+            }
             throw error
         }
     }
@@ -248,12 +262,14 @@ final class PasteboardService {
     /// The clipboard is handed back on every failure too, and nothing is pasted unless
     /// `target` is confirmed frontmost.
     func replaceSelection(with text: String, in target: Target?) async throws {
-        if transaction == nil {
-            transaction = Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
-        }
+        let id = transaction?.id
+            ?? beginTransaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount, isCapturing: false)
         // Covers every exit below. Before the payload is written this is a no-op unless the
-        // clipboard still holds the captured selection.
-        defer { restoreClipboard() }
+        // clipboard still holds the captured selection. It never ends a different, later
+        // transaction.
+        defer {
+            if transaction?.id == id { restoreClipboard() }
+        }
 
         guard environment.isAccessibilityTrusted() else {
             throw PasteboardError.accessibilityPermissionRequired
@@ -265,17 +281,19 @@ final class PasteboardService {
         var polls = 0
         while environment.frontmostProcessIdentifier() != target.processIdentifier && polls < Timing.activationPolls {
             try await environment.sleep(Timing.pollInterval)
+            try requireActive(id)
             polls += 1
         }
         try requireFrontmost(target)
         try await environment.sleep(Timing.activationSettle)
+        try requireActive(id)
 
         // Checked after the waits, right before taking the clipboard over again: if
         // something newer was copied while the preview was up or while the target app was
         // coming forward, that is what must survive the paste, not the older backup.
         if let active = transaction, pasteboard.changeCount != active.ownedChangeCount {
             logger.info("Clipboard changed during the session; preserving the newer contents")
-            transaction = Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
+            transaction?.backup = pasteboard.snapshot()
         }
         pasteboard.setString(text)
         transaction?.ownedChangeCount = pasteboard.changeCount
@@ -292,12 +310,13 @@ final class PasteboardService {
 
     /// Hands the user's clipboard back and ends the transaction. Does nothing when no
     /// transaction is pending, and leaves the clipboard alone if something newer than this
-    /// service's own write is on it. Synchronous, so it is safe to call while quitting.
+    /// service's own write is on it. Synchronous, so it is safe to call while quitting, also
+    /// in the middle of a capture or a paste: that operation then stops at its next step.
     func restoreClipboard() {
         guard let active = transaction else { return }
         transaction = nil
 
-        guard pasteboard.changeCount == active.ownedChangeCount else {
+        guard active.isCapturing || pasteboard.changeCount == active.ownedChangeCount else {
             logger.info("Clipboard has newer contents; not restoring the backup")
             return
         }
@@ -312,6 +331,23 @@ final class PasteboardService {
     }
 
     // MARK: - Helpers
+
+    private func beginTransaction(backup: PasteboardBackup?, ownedChangeCount: Int, isCapturing: Bool) -> Int {
+        lastTransactionID += 1
+        transaction = Transaction(
+            backup: backup,
+            ownedChangeCount: ownedChangeCount,
+            isCapturing: isCapturing,
+            id: lastTransactionID
+        )
+        return lastTransactionID
+    }
+
+    /// Stops an operation whose transaction was ended while it was waiting. The clipboard
+    /// has already been handed back, so the operation must not read, write or paste.
+    private func requireActive(_ id: Int) throws {
+        guard transaction?.id == id else { throw CancellationError() }
+    }
 
     private func requireFrontmost(_ target: Target?) throws {
         guard let target else { throw PasteboardError.noTargetApplication }
