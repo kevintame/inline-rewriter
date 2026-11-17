@@ -10,6 +10,10 @@ struct ProviderDetailView: View {
     let testConnection: (ModelProviderConfig, String) async throws -> Void
 
     @State private var apiKey: String = ""
+    /// The key as it was read from the Keychain, to tell an edit from an untouched field.
+    @State private var loadedAPIKey: String = ""
+    /// The saved key could not be read, so an empty field does not mean "no key".
+    @State private var apiKeyLoadFailed = false
     @State private var showAPIKey: Bool = false
     @State private var draftHost: String = ""
     @State private var draftSubPath: String = ""
@@ -154,10 +158,14 @@ struct ProviderDetailView: View {
         draftIsDefault = config.isDefaultVendor
 
         do {
-            apiKey = try keychain.readString(account: providerID.keychainAccount) ?? ""
+            loadedAPIKey = try keychain.readString(account: providerID.keychainAccount) ?? ""
+            apiKeyLoadFailed = false
         } catch {
-            apiKey = ""
+            loadedAPIKey = ""
+            apiKeyLoadFailed = true
+            showStatus("Couldn't read the saved API key (\(error.localizedDescription)). It is unchanged; enter a key to replace it.", isError: true)
         }
+        apiKey = loadedAPIKey
     }
 
     /// The form fields as a config, validated the same way for Save and Test.
@@ -182,16 +190,23 @@ struct ProviderDetailView: View {
             return
         }
 
+        // Only touch the Keychain when the key field was actually edited. In particular an
+        // empty field after a failed read must not delete a key that is still there.
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            if trimmedKey.isEmpty {
-                try keychain.delete(account: providerID.keychainAccount)
-            } else {
-                try keychain.writeString(trimmedKey, account: providerID.keychainAccount)
+        let keyWasEdited = apiKeyLoadFailed ? !trimmedKey.isEmpty : trimmedKey != loadedAPIKey
+        if keyWasEdited {
+            do {
+                if trimmedKey.isEmpty {
+                    try keychain.delete(account: providerID.keychainAccount)
+                } else {
+                    try keychain.writeString(trimmedKey, account: providerID.keychainAccount)
+                }
+                loadedAPIKey = trimmedKey
+                apiKeyLoadFailed = false
+            } catch {
+                showStatus("Keychain error: \(error.localizedDescription)", isError: true)
+                return
             }
-        } catch {
-            showStatus("Keychain error: \(error.localizedDescription)", isError: true)
-            return
         }
 
         config.host = updated.host
