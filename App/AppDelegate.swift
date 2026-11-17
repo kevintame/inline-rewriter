@@ -19,8 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One rewrite, from hotkey press to replace or cancel.
     private final class RewriteSession {
         let input: String
-        let backup: PasteboardService.PasteboardBackup?
-        let targetApp: NSRunningApplication?
+        let target: PasteboardService.Target?
         /// The display that was active when the shortcut was pressed.
         let screen: NSScreen?
         let pickerViewModel: TransformationPickerViewModel
@@ -28,13 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var busyObservation: AnyCancellable?
 
         init(input: String,
-             backup: PasteboardService.PasteboardBackup?,
-             targetApp: NSRunningApplication?,
+             target: PasteboardService.Target?,
              screen: NSScreen?,
              pickerViewModel: TransformationPickerViewModel) {
             self.input = input
-            self.backup = backup
-            self.targetApp = targetApp
+            self.target = target
             self.screen = screen
             self.pickerViewModel = pickerViewModel
         }
@@ -78,6 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Quitting mid-rewrite must not leave the captured selection on the clipboard.
+        // The service call also covers a capture or paste that is still in flight.
+        endSession(restoreClipboard: true)
+        container.pasteboardService.restoreClipboard()
         container.hotkeyManager.stop()
     }
 
@@ -170,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Capture the frontmost app before anything else so our own activation later
         // does not change the paste target.
-        let targetApp = NSWorkspace.shared.frontmostApplication
+        let target = NSWorkspace.shared.frontmostApplication.map(PasteboardService.Target.init)
         // Likewise the active display, before this app takes focus.
         let screen = NSScreen.main
         isBusy = true
@@ -178,8 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             defer { isBusy = false }
             do {
-                let capture = try await container.pasteboardService.captureSelection()
-                startSession(input: capture.text, backup: capture.backup, targetApp: targetApp, screen: screen)
+                let input = try await container.pasteboardService.captureSelection(from: target)
+                startSession(input: input, target: target, screen: screen)
             } catch {
                 presentError(error, fallbackTitle: "Couldn't read selection")
             }
@@ -187,8 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startSession(input: String,
-                              backup: PasteboardService.PasteboardBackup?,
-                              targetApp: NSRunningApplication?,
+                              target: PasteboardService.Target?,
                               screen: NSScreen?) {
         let viewModel = TransformationPickerViewModel(
             inputText: input,
@@ -197,8 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let session = RewriteSession(
             input: input,
-            backup: backup,
-            targetApp: targetApp,
+            target: target,
             screen: screen,
             pickerViewModel: viewModel
         )
@@ -250,9 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let session, self.session === session else { return }
             // The result becomes the clipboard, so the backup is deliberately not restored.
             self.endSession(restoreClipboard: false)
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
+            self.container.pasteboardService.keepOnClipboard(text)
         }
 
         present(PreviewView(viewModel: viewModel), for: session)
@@ -271,11 +268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Give macOS a moment to finish dismissing the panel and hand focus back.
             try? await Task.sleep(nanoseconds: 200_000_000)
             do {
-                try await container.pasteboardService.replaceSelection(
-                    with: output,
-                    restoring: session.backup,
-                    targetApp: session.targetApp
-                )
+                // Hands the clipboard back itself, whether or not the paste goes through.
+                try await container.pasteboardService.replaceSelection(with: output, in: session.target)
             } catch {
                 presentError(error, fallbackTitle: "Replace failed")
             }
@@ -291,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.close()
 
         if restoreClipboard {
-            container.pasteboardService.restore(session.backup)
+            container.pasteboardService.restoreClipboard()
         }
     }
 
