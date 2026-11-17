@@ -88,7 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "pencil.circle.fill", accessibilityDescription: "Inline Rewriter")
+        let statusImage = NSImage(named: "StatusIcon")
+            ?? NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "Inline Rewriter")
+        statusImage?.size = NSSize(width: 18, height: 18)
+        statusImage?.isTemplate = true
+        statusItem.button?.image = statusImage
+        statusItem.button?.setAccessibilityLabel("Inline Rewriter")
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
