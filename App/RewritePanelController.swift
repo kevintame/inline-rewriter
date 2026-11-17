@@ -8,22 +8,38 @@ private final class RewritePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// Gives its one child, a scroll view, the size of the scroll view's content, capped at the
+/// size on offer. So the panel is exactly as big as its content when there is room, and
+/// never bigger than the room there is.
+private struct FitOrScrollLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let scrollView = subviews.first else { return .zero }
+        // A scroll view's ideal size is the natural size of what it scrolls.
+        let natural = scrollView.sizeThatFits(.unspecified)
+        return CGSize(
+            width: min(natural.width, proposal.width ?? natural.width),
+            height: min(natural.height, proposal.height ?? natural.height)
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
 /// Rounded window background for the borderless panel.
-private struct RewritePanelChrome<Content: View>: View {
+struct RewritePanelChrome<Content: View>: View {
     let content: Content
 
     private static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
 
     var body: some View {
-        // Normally the content is shown at its natural size. On a display too short for
-        // it, it scrolls inside the clamped panel instead of being cut off.
-        ViewThatFits(in: .vertical) {
-            content
-            ScrollView(.vertical) { content }
+        // The content is shown at its natural size wherever that fits. Where the usable
+        // screen area is smaller (a short display, a side Dock on a narrow one), the panel
+        // is clamped and the content scrolls inside it instead of being cut off.
+        FitOrScrollLayout {
+            ScrollView([.horizontal, .vertical]) { content }
         }
-        // Always the content's own width; a greedy row must not stretch the panel across
-        // the display.
-        .fixedSize(horizontal: true, vertical: false)
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(Self.shape)
         .overlay(Self.shape.strokeBorder(Color.primary.opacity(0.15)))
@@ -50,6 +66,7 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
     /// AppKit does not also resize the window behind our back.
     private var hosting: HostingController?
     private var sizeObservation: NSKeyValueObservation?
+    private var screenObservation: NSObjectProtocol?
     /// Set while this controller hides the panel itself, so that is not reported as a
     /// dismissal by the user.
     private var isClosing = false
@@ -79,6 +96,24 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
         // Follow the user to whichever Space they are in, including over a full-screen app.
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.delegate = self
+
+        // The Dock moving or a display being reconfigured changes the usable area without
+        // the content changing size.
+        screenObservation = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                _ = self?.pinToCorner()
+            }
+        }
+    }
+
+    deinit {
+        if let screenObservation {
+            NotificationCenter.default.removeObserver(screenObservation)
+        }
     }
 
     var isVisible: Bool { panel.isVisible }
