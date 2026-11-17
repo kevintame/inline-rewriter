@@ -16,8 +16,8 @@
 		374EC108FB69887F6EAD599E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D2FCE1DE485EC4C21C85B99 /* KeychainStore.swift */; };
 		39F125A1B6CE13031170DCD2 /* SettingsRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8065F16C7518580C5535E785 /* SettingsRootView.swift */; };
 		44CE74047345F28E9F9EE1F3 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00E18E28D334C64D0B9DEDB /* SettingsStore.swift */; };
-		4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */; };
-		4D972A4F5DCDBF680F52B363 /* TextPositionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104B42C01F1386B6D256AA06 /* TextPositionService.swift */; };
+		4CFC04227D9E9C26038886A5 /* RewritePanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292417F385A46428DA000F22 /* RewritePanelController.swift */; };
+		4D972A4F5DCDBF680F52B363 /* PanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 104B42C01F1386B6D256AA06 /* PanelPlacement.swift */; };
 		7B2225BEA2D97E9F9A7BBC90 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAFA914411372860C302E18 /* main.swift */; };
 		84199D83DE39E80AF4F3D7E4 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51A3A6ED713510957BDE153 /* HotkeyManager.swift */; };
 		862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B95403CCD0ED5B86E3ADFACD /* OpenAIClient.swift */; };
@@ -48,10 +48,10 @@
 		CC2222220000000000000003 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		0A6DA5E0C2B3B0D6B9E1885B /* TransformationPickerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationPickerViewModel.swift; sourceTree = "<group>"; };
 		0B2943CC26D767FF88AF3EF5 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
-		104B42C01F1386B6D256AA06 /* TextPositionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPositionService.swift; sourceTree = "<group>"; };
+		104B42C01F1386B6D256AA06 /* PanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelPlacement.swift; sourceTree = "<group>"; };
 		1FF6CC5019B72F06EF533C6B /* InlineRewriter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InlineRewriter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2031F595AD52C869901A4027 /* TransformationPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformationPickerView.swift; sourceTree = "<group>"; };
-		292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverAnchorWindow.swift; sourceTree = "<group>"; };
+		292417F385A46428DA000F22 /* RewritePanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RewritePanelController.swift; sourceTree = "<group>"; };
 		388071644F9006B2FA3533E3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		3F44A9BB3806E49772129CD3 /* PreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewView.swift; sourceTree = "<group>"; };
 		414AB0BCFA9E81DF34189CAF /* PreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViewModel.swift; sourceTree = "<group>"; };
@@ -95,7 +95,7 @@
 				64287F5EE4F3ADF78CADC155 /* AppDelegate.swift */,
 				CC2222220000000000000001 /* MainMenu.swift */,
 				DAAFA914411372860C302E18 /* main.swift */,
-				292417F385A46428DA000F22 /* PopoverAnchorWindow.swift */,
+				292417F385A46428DA000F22 /* RewritePanelController.swift */,
 				388071644F9006B2FA3533E3 /* SettingsWindowController.swift */,
 				BB2222220000000000000002 /* WelcomeWindowController.swift */,
 			);
@@ -117,6 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				666FDCD577DA58BCCF369136 /* AlertPresenter.swift */,
+				104B42C01F1386B6D256AA06 /* PanelPlacement.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -234,7 +235,6 @@
 			isa = PBXGroup;
 			children = (
 				CC2222220000000000000002 /* AccessibilityPermissionMonitor.swift */,
-				104B42C01F1386B6D256AA06 /* TextPositionService.swift */,
 			);
 			path = Accessibility;
 			sourceTree = "<group>";
@@ -333,13 +333,13 @@
 				374EC108FB69887F6EAD599E /* KeychainStore.swift in Sources */,
 				862B313125C870B7CE0F7CEE /* OpenAIClient.swift in Sources */,
 				8CF900E618F100AF47A621A5 /* PasteboardService.swift in Sources */,
-				4CFC04227D9E9C26038886A5 /* PopoverAnchorWindow.swift in Sources */,
+				4CFC04227D9E9C26038886A5 /* RewritePanelController.swift in Sources */,
 				324FF74ED56A7651055FFFBA /* PreviewView.swift in Sources */,
 				EF93EE60ACB235B397F9D913 /* PreviewViewModel.swift in Sources */,
 				39F125A1B6CE13031170DCD2 /* SettingsRootView.swift in Sources */,
 				44CE74047345F28E9F9EE1F3 /* SettingsStore.swift in Sources */,
 				E658F4EA7D193C07E5AB68E6 /* SettingsWindowController.swift in Sources */,
-				4D972A4F5DCDBF680F52B363 /* TextPositionService.swift in Sources */,
+				4D972A4F5DCDBF680F52B363 /* PanelPlacement.swift in Sources */,
 				EFD353BD6DCBBDAA43EAEE16 /* TextTransformation.swift in Sources */,
 				2DC9BDA537BAFB369C383A00 /* TextTransformer.swift in Sources */,
 				BFFFB13AC8CAB875597CB2E1 /* TransformationPickerView.swift in Sources */,

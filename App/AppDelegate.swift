@@ -6,48 +6,42 @@ import os.log
 /// Creates the menubar status item and drives the rewrite flow:
 /// hotkey → capture selection → pick transformation → preview → replace.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     let container: AppContainer
 
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "App")
 
     private var statusItem: NSStatusItem!
 
-    private let transformationPopover = NSPopover()
-    private let previewPopover = NSPopover()
-
-    private let textPositionService = TextPositionService()
-    private var anchorWindow: PopoverAnchorWindow?
+    /// The one window the picker and the preview are shown in.
+    private let panelController = RewritePanelController()
 
     /// One rewrite, from hotkey press to replace or cancel.
     private final class RewriteSession {
         let input: String
         let backup: PasteboardService.PasteboardBackup?
         let targetApp: NSRunningApplication?
-        let textBounds: CGRect?
+        /// The display that was active when the shortcut was pressed.
+        let screen: NSScreen?
         let pickerViewModel: TransformationPickerViewModel
 
-        /// The popover this session expects to be on screen. When a popover closes and is
-        /// still the active one, the user dismissed it (click outside, app switch) rather
-        /// than the app moving to the next step.
-        weak var activePopover: NSPopover?
         var busyObservation: AnyCancellable?
 
         init(input: String,
              backup: PasteboardService.PasteboardBackup?,
              targetApp: NSRunningApplication?,
-             textBounds: CGRect?,
+             screen: NSScreen?,
              pickerViewModel: TransformationPickerViewModel) {
             self.input = input
             self.backup = backup
             self.targetApp = targetApp
-            self.textBounds = textBounds
+            self.screen = screen
             self.pickerViewModel = pickerViewModel
         }
     }
 
     private var session: RewriteSession?
-    /// True while capturing the selection or pasting the result, when no popover is up
+    /// True while capturing the selection or pasting the result, when the panel is not up
     /// but a second hotkey press must still be ignored.
     private var isBusy = false {
         didSet { refreshStatusItemBusy() }
@@ -69,7 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.mainMenu = MainMenu.make()
 
         setUpStatusItem()
-        setUpPopovers()
+        // Losing focus (click elsewhere, app switch) dismisses the panel like a popover.
+        panelController.onDismiss = { [weak self] in
+            self?.endSession(restoreClipboard: true)
+        }
         configureWindows()
 
         container.hotkeyManager.onHotkey = { [weak self] in
@@ -96,13 +93,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Inline Rewriter", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
-    }
-
-    private func setUpPopovers() {
-        for popover in [transformationPopover, previewPopover] {
-            popover.behavior = .transient
-            popover.delegate = self
-        }
     }
 
     private func configureWindows() {
@@ -167,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func handleHotkey() {
         guard !isBusy else { return }
 
-        // Pressing the shortcut while a popover is up dismisses it.
+        // Pressing the shortcut while the panel is up dismisses it.
         if session != nil {
             endSession(restoreClipboard: true)
             return
@@ -176,14 +166,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // Capture the frontmost app before anything else so our own activation later
         // does not change the paste target.
         let targetApp = NSWorkspace.shared.frontmostApplication
+        // Likewise the active display, before this app takes focus.
+        let screen = NSScreen.main
         isBusy = true
 
         Task { @MainActor in
             defer { isBusy = false }
             do {
                 let capture = try await container.pasteboardService.captureSelection()
-                let bounds = textPositionService.getSelectedTextBounds(in: targetApp)
-                startSession(input: capture.text, backup: capture.backup, targetApp: targetApp, textBounds: bounds)
+                startSession(input: capture.text, backup: capture.backup, targetApp: targetApp, screen: screen)
             } catch {
                 presentError(error, fallbackTitle: "Couldn't read selection")
             }
@@ -193,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func startSession(input: String,
                               backup: PasteboardService.PasteboardBackup?,
                               targetApp: NSRunningApplication?,
-                              textBounds: CGRect?) {
+                              screen: NSScreen?) {
         let viewModel = TransformationPickerViewModel(
             inputText: input,
             settings: container.settingsStore,
@@ -203,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             input: input,
             backup: backup,
             targetApp: targetApp,
-            textBounds: textBounds,
+            screen: screen,
             pickerViewModel: viewModel
         )
         self.session = session
@@ -227,11 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func showPicker(for session: RewriteSession) {
-        transformationPopover.contentViewController = NSHostingController(
-            rootView: TransformationPickerView(viewModel: session.pickerViewModel)
-        )
-        session.activePopover = transformationPopover
-        present(transformationPopover, for: session)
+        present(TransformationPickerView(viewModel: session.pickerViewModel), for: session)
     }
 
     private func showPreview(output: String, transformation: TextTransformation, session: RewriteSession) {
@@ -247,8 +234,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         viewModel.onRetry = { [weak self, weak session] in
             guard let self, let session, self.session === session else { return }
             // Bring the picker back so the spinner and any error are visible, then re-run.
-            session.activePopover = self.transformationPopover
-            self.previewPopover.performClose(nil)
             self.showPicker(for: session)
             session.pickerViewModel.run(transformation)
         }
@@ -265,27 +250,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             pasteboard.setString(text, forType: .string)
         }
 
-        previewPopover.contentViewController = NSHostingController(rootView: PreviewView(viewModel: viewModel))
-
-        // Mark the preview active before closing the picker so the picker's close is
-        // treated as a step, not a cancel.
-        session.activePopover = previewPopover
-        transformationPopover.performClose(nil)
-        present(previewPopover, for: session)
+        present(PreviewView(viewModel: viewModel), for: session)
     }
 
     private func replace(output: String, session: RewriteSession) {
-        // The session is over from the flow's point of view; clearing it first means the
-        // preview's close callback does not restore the clipboard under us.
+        // The session is over from the flow's point of view; clearing it first means
+        // closing the panel does not restore the clipboard under us.
         self.session = nil
         requestInFlight = false
         isBusy = true
-        previewPopover.performClose(nil)
-        anchorWindow?.orderOut(nil)
+        panelController.close()
 
         Task { @MainActor in
             defer { isBusy = false }
-            // Give macOS a moment to finish dismissing the popover and hand focus back.
+            // Give macOS a moment to finish dismissing the panel and hand focus back.
             try? await Task.sleep(nanoseconds: 200_000_000)
             do {
                 try await container.pasteboardService.replaceSelection(
@@ -305,9 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         requestInFlight = false
 
         session.pickerViewModel.cancelInFlight()
-        transformationPopover.performClose(nil)
-        previewPopover.performClose(nil)
-        anchorWindow?.orderOut(nil)
+        panelController.close()
 
         if restoreClipboard {
             container.pasteboardService.restore(session.backup)
@@ -329,60 +305,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem?.button?.appearsDisabled = isBusy || requestInFlight
     }
 
-    // MARK: - NSPopoverDelegate
-
-    func popoverDidClose(_ notification: Notification) {
-        guard let popover = notification.object as? NSPopover else { return }
-        popover.contentViewController = nil
-
-        if let session, session.activePopover === popover {
-            // Closed by the user rather than by the flow moving on.
-            endSession(restoreClipboard: true)
-        }
-    }
-
     // MARK: - Presentation
 
-    private func present(_ popover: NSPopover, for session: RewriteSession) {
-        if let bounds = session.textBounds {
-            presentAtTextLocation(popover, bounds: bounds)
-        } else {
-            presentAtMenuBar(popover)
-        }
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func presentAtTextLocation(_ popover: NSPopover, bounds: CGRect) {
-        if anchorWindow == nil {
-            anchorWindow = PopoverAnchorWindow()
-        }
-        guard let anchor = anchorWindow else { return }
-
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(bounds.origin) }) ?? NSScreen.main else {
-            presentAtMenuBar(popover)
+    /// Shows `content` in the panel on the session's display. A panel that cannot be shown
+    /// must not leave a session behind: the shortcut would only cancel it on the next press.
+    private func present<Content: View>(_ content: Content, for session: RewriteSession) {
+        guard panelController.show(content, on: session.screen) else {
+            logger.error("Could not show the rewriter panel")
+            endSession(restoreClipboard: true)
             return
         }
-
-        // Text in the upper half of the screen gets the popover below it, and vice versa.
-        let relativeY = (bounds.midY - screen.frame.minY) / screen.frame.height
-        let showBelow = relativeY > 0.5
-
-        let anchorSize = CGSize(width: 20, height: 20)
-        let anchorPoint = CGPoint(
-            x: bounds.midX - anchorSize.width / 2,
-            y: (showBelow ? bounds.minY : bounds.maxY) - anchorSize.height / 2
-        )
-
-        anchor.positionAt(anchorPoint, size: anchorSize)
-        anchor.orderFront(nil)
-
-        guard let contentView = anchor.contentView else { return }
-        let anchorRect = CGRect(x: anchorSize.width / 2, y: anchorSize.height / 2, width: 1, height: 1)
-        popover.show(relativeTo: anchorRect, of: contentView, preferredEdge: showBelow ? .minY : .maxY)
-    }
-
-    private func presentAtMenuBar(_ popover: NSPopover) {
-        guard let button = statusItem.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 }
