@@ -25,7 +25,8 @@ Build and run from Xcode 16 or later, then exercise shortcut, picker, preview, r
 ## Pitfalls
 
 - New Swift files must be added to the Xcode target. SwiftPM picks up `Core/` on its own.
-- Any new way to dismiss a popover must end the `RewriteSession`, or the shortcut stops responding.
+- Any new way to dismiss the rewriter panel must end the `RewriteSession`, or the shortcut stops responding.
+- `PasteboardService` owns the clipboard transaction. End it through the service (`restoreClipboard`, `keepOnClipboard`); do not write to `NSPasteboard.general` elsewhere in the flow.
 - Only Accessibility permission is required. Do not reintroduce `NSEvent` global monitors.
 - TCC grants follow the code signature. Use a stable identity when testing permissions.
 

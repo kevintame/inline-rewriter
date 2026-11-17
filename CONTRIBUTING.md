@@ -15,7 +15,7 @@
 
 ## Things that are easy to break
 
-- **Popover state.** `AppDelegate` tracks one `RewriteSession`. Any new way to dismiss a popover must
+- **Panel state.** `AppDelegate` tracks one `RewriteSession`. Any new way to dismiss the panel must
   end the session, or the shortcut stops responding.
 - **Shortcut registration.** `HotkeyManager` uses Carbon `RegisterEventHotKey`. Shortcuts without
   ⌘, ⌥, or ⌃ are rejected because they would swallow normal typing system-wide.

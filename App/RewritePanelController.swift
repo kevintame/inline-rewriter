@@ -54,6 +54,12 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
     /// dismissal by the user.
     private var isClosing = false
 
+    /// Keyboard handling for whatever the panel is showing. One monitor, installed while
+    /// the panel is up and removed when it closes, rather than one per SwiftUI view whose
+    /// removal would depend on view lifecycle callbacks.
+    private var keyMonitor: Any?
+    private var keyHandler: ((NSEvent) -> Bool)?
+
     override init() {
         panel = RewritePanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 120),
@@ -83,12 +89,17 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
     /// Shows `content`, replacing whatever the panel showed before. Pass the display to use
     /// when starting a flow; pass `nil` to stay on the display already in use.
     ///
-    /// Returns false if the panel could not be put on screen.
+    /// `onKeyDown` sees key presses aimed at the panel and returns true for the ones it
+    /// used. Returns false if the panel could not be put on screen.
     @discardableResult
-    func show<Content: View>(_ content: Content, on screen: NSScreen? = nil) -> Bool {
+    func show<Content: View>(_ content: Content,
+                             on screen: NSScreen? = nil,
+                             onKeyDown: @escaping (NSEvent) -> Bool = { _ in false }) -> Bool {
         if let screen {
             self.screen = screen
         }
+        keyHandler = onKeyDown
+        installKeyMonitor()
 
         let hosting = HostingController(rootView: AnyView(RewritePanelChrome(content: content)))
         // Publish the SwiftUI content's size so the panel can follow it as it changes
@@ -115,10 +126,44 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
         return panel.isVisible
     }
 
+    /// The display showing the frontmost window of the app with process id `pid`, which is
+    /// where the user is working. Falls back to the display under the pointer, then to
+    /// AppKit's main screen.
+    ///
+    /// Uses the window server's window list, which needs no permission for bounds and does
+    /// not wait on the other app.
+    static func activeScreen(forProcess pid: pid_t?) -> NSScreen? {
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return nil }
+
+        if let pid,
+           let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+            // Front to back; layer 0 is ordinary app windows.
+            for window in windows {
+                guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                      (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                      let boundsDictionary = window[kCGWindowBounds as String] as? NSDictionary,
+                      let quartzBounds = CGRect(dictionaryRepresentation: boundsDictionary) else { continue }
+                let bounds = PanelPlacement.appKitRect(fromQuartz: quartzBounds, primaryScreenHeight: primary.frame.height)
+                if let index = PanelPlacement.indexOfScreen(containingMostOf: bounds, screenFrames: screens.map(\.frame)) {
+                    return screens[index]
+                }
+            }
+        }
+
+        let pointer = NSEvent.mouseLocation
+        return screens.first { $0.frame.contains(pointer) } ?? NSScreen.main ?? primary
+    }
+
     /// Hides the panel and tears down its content without reporting a dismissal.
     func close() {
         isClosing = true
         defer { isClosing = false }
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+        }
+        keyMonitor = nil
+        keyHandler = nil
         sizeObservation = nil
         panel.orderOut(nil)
         // Dropping the content tears down the SwiftUI views and anything they installed.
@@ -156,6 +201,28 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
             panel.invalidateShadow()
         }
         return true
+    }
+
+    // MARK: - Keyboard
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        // A local monitor only sees this app's own events; it needs no extra permission.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKeyDown(event) ? nil : event
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        // Keys typed in Settings or Welcome are none of the panel's business.
+        guard event.window === panel, let keyHandler else { return false }
+        // While an input method is composing (Japanese, Chinese, Korean…), Return and
+        // Escape belong to it: they confirm or cancel the composition.
+        if let input = panel.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+            return false
+        }
+        return keyHandler(event)
     }
 
     // MARK: - NSWindowDelegate

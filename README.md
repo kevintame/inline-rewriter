@@ -3,7 +3,8 @@
 macOS menu bar app that rewrites selected text in place using an OpenAI-compatible model.
 
 Select text in any app, press the shortcut (default ⌥⌘/), pick a prompt, preview the result,
-and replace the selection. Your clipboard is restored afterwards.
+and replace the selection. Your clipboard is restored afterwards. The picker and preview open
+in a small panel in the upper-right corner of the display you are working on.
 
 In the picker, ↑/↓ and Return choose a prompt, or press 1–9 to run one directly. The preview
 is editable before you replace: Return replaces, ⌥↩ inserts a newline, and Copy puts the result
@@ -21,22 +22,26 @@ on the clipboard instead of pasting it.
    Input Monitoring permission and the keystroke never reaches the app you're typing in.
 2. The selection is read by simulating ⌘C and replaced by simulating ⌘V, which is why
    Accessibility permission is required. The previous clipboard is backed up and restored
-   whether you replace or cancel.
+   whether you replace, cancel, or something fails. If you copy something else while the
+   panel is open, that newer copy is kept instead. Nothing is pasted unless the app you
+   started in is frontmost again.
 3. The prompt is sent to the configured endpoint with your API key from the Keychain. Only
    the selected text and your prompt leave the machine.
 
 ## Project layout
 
-- `App/`: AppKit entry point (`main.swift`), `AppDelegate` (status item, popover flow),
+- `App/`: AppKit entry point (`main.swift`), `AppDelegate` (status item, rewrite flow),
+  `RewritePanelController` (the picker/preview panel),
   window controllers, main menu
 - `Core/`: services with no UI dependencies beyond AppKit types
   - `Hotkey/`: shortcut model and Carbon registration
   - `Pasteboard/`: copy/paste simulation and clipboard backup
-  - `Accessibility/`: permission monitor, selected-text position lookup
+  - `Accessibility/`: permission monitor
   - `OpenAI/`: Chat Completions client
   - `Models/`: provider configuration and endpoint validation
   - `Settings/`: UserDefaults-backed settings, Keychain wrapper
   - `System/`: launch-at-login via `SMAppService`
+  - `UI/`: alert helper, panel placement math
 - `Features/`: SwiftUI views and view models (welcome, settings, picker, preview)
 - `Tests/`: unit tests for `Core/`, run with SwiftPM
 
@@ -73,7 +78,7 @@ get Keychain prompts on each update. Distribute with a Developer ID and notarize
 - **Models**: API key, host, path, and model for OpenAI. Host accepts any
   Chat-Completions-compatible server; HTTPS is enforced except for `http://localhost`.
   "Test Connection" sends a tiny request with the unsaved values so a bad key or model
-  fails here rather than in the popover. Anthropic and Gemini configs exist in the data
+  fails here rather than in the picker. Anthropic and Gemini configs exist in the data
   model but have no client yet and are hidden.
 - **Prompts**: the system instructions sent with every request, then the preset "Rewrite"
   plus your own. Templates must contain `{{text}}`. The preset can be edited but not deleted.

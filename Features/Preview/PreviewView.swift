@@ -3,7 +3,6 @@ import SwiftUI
 /// Popover showing transformed text, editable before it is pasted back.
 struct PreviewView: View {
     @ObservedObject var viewModel: PreviewViewModel
-    @State private var eventMonitor: Any?
     @State private var showOriginal = false
 
     private static let width: CGFloat = 520
@@ -61,30 +60,5 @@ struct PreviewView: View {
         }
         .frame(width: Self.width)
         .padding(14)
-        .onAppear {
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                switch event.keyCode {
-                case 36, 76: // Return, keypad Enter
-                    // Return commits even while the editor has focus, so the fast path stays
-                    // hotkey → Return → Return. ⌥↩ falls through to the editor as a newline.
-                    let modifiers = event.modifierFlags
-                        .intersection(.deviceIndependentFlagsMask)
-                        .subtracting([.numericPad, .function])
-                    if modifiers.contains(.option) { return event }
-                    viewModel.replace()
-                    return nil
-                case 53: // Escape
-                    viewModel.cancel()
-                    return nil
-                default:
-                    return event
-                }
-            }
-        }
-        .onDisappear {
-            if let monitor = eventMonitor {
-                NSEvent.removeMonitor(monitor)
-            }
-        }
     }
 }

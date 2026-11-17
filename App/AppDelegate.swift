@@ -171,9 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Capture the frontmost app before anything else so our own activation later
         // does not change the paste target.
-        let target = NSWorkspace.shared.frontmostApplication.map(PasteboardService.Target.init)
-        // Likewise the active display, before this app takes focus.
-        let screen = NSScreen.main
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let target = frontmostApp.map(PasteboardService.Target.init)
+        // Likewise the display the user is working on, before this app takes focus.
+        let screen = RewritePanelController.activeScreen(forProcess: frontmostApp?.processIdentifier)
         isBusy = true
 
         Task { @MainActor in
@@ -222,7 +223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPicker(for session: RewriteSession) {
-        present(TransformationPickerView(viewModel: session.pickerViewModel), for: session)
+        let viewModel = session.pickerViewModel
+        present(TransformationPickerView(viewModel: viewModel), for: session) { [weak viewModel] event in
+            viewModel?.handleKeyDown(event) ?? false
+        }
     }
 
     private func showPreview(output: String, transformation: TextTransformation, session: RewriteSession) {
@@ -252,7 +256,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.container.pasteboardService.keepOnClipboard(text)
         }
 
-        present(PreviewView(viewModel: viewModel), for: session)
+        present(PreviewView(viewModel: viewModel), for: session) { [weak viewModel] event in
+            viewModel?.handleKeyDown(event) ?? false
+        }
     }
 
     private func replace(output: String, session: RewriteSession) {
@@ -308,8 +314,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shows `content` in the panel on the session's display. A panel that cannot be shown
     /// must not leave a session behind: the shortcut would only cancel it on the next press.
-    private func present<Content: View>(_ content: Content, for session: RewriteSession) {
-        guard panelController.show(content, on: session.screen) else {
+    private func present<Content: View>(_ content: Content,
+                                        for session: RewriteSession,
+                                        onKeyDown: @escaping (NSEvent) -> Bool) {
+        guard panelController.show(content, on: session.screen, onKeyDown: onKeyDown) else {
             logger.error("Could not show the rewriter panel")
             endSession(restoreClipboard: true)
             return

@@ -50,4 +50,37 @@ struct PanelPlacementTests {
         #expect(frame.height == 10)
         #expect(tiny.contains(frame) || frame.width == 0)
     }
+
+    // MARK: Choosing the display
+
+    /// Primary 1440x900 with a 1920x1080 display to its right, tops aligned.
+    private let screens = [
+        CGRect(x: 0, y: 0, width: 1440, height: 900),
+        CGRect(x: 1440, y: -180, width: 1920, height: 1080),
+    ]
+
+    @Test func quartzRectsAreFlippedAgainstThePrimaryDisplay() {
+        // 100 pt below the top of the primary display.
+        let rect = PanelPlacement.appKitRect(fromQuartz: CGRect(x: 50, y: 100, width: 800, height: 600), primaryScreenHeight: 900)
+        #expect(rect == CGRect(x: 50, y: 200, width: 800, height: 600))
+    }
+
+    @Test func windowOnTheSecondaryDisplaySelectsIt() {
+        let quartz = CGRect(x: 1600, y: 50, width: 1000, height: 700)
+        let rect = PanelPlacement.appKitRect(fromQuartz: quartz, primaryScreenHeight: 900)
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: rect, screenFrames: screens) == 1)
+    }
+
+    @Test func windowStraddlingDisplaysSelectsTheOneHoldingMostOfIt() {
+        let mostlyPrimary = CGRect(x: 800, y: 100, width: 800, height: 500)
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: mostlyPrimary, screenFrames: screens) == 0)
+        let mostlySecondary = CGRect(x: 1300, y: 100, width: 800, height: 500)
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: mostlySecondary, screenFrames: screens) == 1)
+    }
+
+    @Test func offScreenOrEmptyWindowSelectsNothing() {
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: CGRect(x: 9000, y: 9000, width: 100, height: 100), screenFrames: screens) == nil)
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: CGRect(x: 10, y: 10, width: 0, height: 0), screenFrames: screens) == nil)
+        #expect(PanelPlacement.indexOfScreen(containingMostOf: CGRect(x: 10, y: 10, width: 5, height: 5), screenFrames: []) == nil)
+    }
 }

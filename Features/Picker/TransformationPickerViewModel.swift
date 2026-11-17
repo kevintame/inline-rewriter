@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import SwiftUI
 
 @MainActor
@@ -92,6 +92,38 @@ final class TransformationPickerViewModel: ObservableObject {
         guard !isBusy, transformations.indices.contains(index) else { return }
         selectedIndex = index
         run(transformations[index])
+    }
+
+    /// Keyboard control of the picker: ↑/↓ move, Return runs, Escape cancels, and a bare
+    /// 1–9 runs that row. Returns true when the key was used.
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 125: // Down arrow
+            selectNext()
+            return true
+        case 126: // Up arrow
+            selectPrevious()
+            return true
+        case 36, 76: // Return, keypad Enter
+            runSelected()
+            return true
+        case 53: // Escape
+            cancel()
+            return true
+        default:
+            break
+        }
+
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.numericPad, .function])
+        if modifiers.isEmpty,
+           let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }),
+           (1...9).contains(digit) {
+            run(at: digit - 1)
+            return true
+        }
+        return false
     }
 
     func selectNext() {

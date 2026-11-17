@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 @MainActor
 final class PreviewViewModel: ObservableObject {
@@ -22,6 +22,26 @@ final class PreviewViewModel: ObservableObject {
 
     var isOutputEmpty: Bool {
         outputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Return commits even while the editor has focus, so the fast path stays
+    /// hotkey → Return → Return. ⌥↩ is left to the editor as a newline. Escape cancels.
+    /// Returns true when the key was used.
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 36, 76: // Return, keypad Enter
+            let modifiers = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.numericPad, .function])
+            if modifiers.contains(.option) { return false }
+            replace()
+            return true
+        case 53: // Escape
+            cancel()
+            return true
+        default:
+            return false
+        }
     }
 
     func cancel() {

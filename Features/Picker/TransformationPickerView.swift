@@ -3,7 +3,6 @@ import SwiftUI
 /// Lists the prompts for the captured text. Shown first when the shortcut is pressed.
 struct TransformationPickerView: View {
     @ObservedObject var viewModel: TransformationPickerViewModel
-    @State private var eventMonitor: Any?
 
     private static let width: CGFloat = 420
     /// Up to this many prompts are laid out at their natural height, so the panel is
@@ -59,43 +58,6 @@ struct TransformationPickerView: View {
             list
         }
         .padding(14)
-        .onAppear {
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                switch event.keyCode {
-                case 125: // Down arrow
-                    viewModel.selectNext()
-                    return nil
-                case 126: // Up arrow
-                    viewModel.selectPrevious()
-                    return nil
-                case 36, 76: // Return, keypad Enter
-                    viewModel.runSelected()
-                    return nil
-                case 53: // Escape
-                    viewModel.cancel()
-                    return nil
-                default:
-                    break
-                }
-
-                // Plain 1–9 picks that row directly.
-                let modifiers = event.modifierFlags
-                    .intersection(.deviceIndependentFlagsMask)
-                    .subtracting([.numericPad, .function])
-                if modifiers.isEmpty,
-                   let digit = event.charactersIgnoringModifiers.flatMap({ Int($0) }),
-                   (1...9).contains(digit) {
-                    viewModel.run(at: digit - 1)
-                    return nil
-                }
-                return event
-            }
-        }
-        .onDisappear {
-            if let monitor = eventMonitor {
-                NSEvent.removeMonitor(monitor)
-            }
-        }
     }
 
     @ViewBuilder
