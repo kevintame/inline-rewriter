@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import Testing
 @testable import InlineRewriterCore
 
+@MainActor
 struct SettingsStoreTests {
     @Test func freshStoreHasDefaults() {
         let store = SettingsStore(defaults: makeTestDefaults())
@@ -85,5 +86,31 @@ struct SettingsStoreTests {
         store.providerConfigs[idx].defaultModel = "gpt-4o"
 
         #expect(SettingsStore(defaults: defaults).config(for: .openAI).defaultModel == "gpt-4o")
+    }
+
+    // MARK: Invalid persisted shortcuts
+
+    @Test(arguments: [-1, 128, 999, Int.max, Int.min])
+    func outOfRangeStoredKeyCodeFallsBackToDefault(keyCode: Int) throws {
+        let defaults = makeTestDefaults()
+        let stored = Hotkey(keyCode: keyCode, modifiers: [.command])
+        defaults.set(try JSONEncoder().encode(stored), forKey: "hotkey")
+
+        #expect(SettingsStore(defaults: defaults).hotkey == .default)
+    }
+
+    @Test func undecodableStoredHotkeyFallsBackToDefault() {
+        let defaults = makeTestDefaults()
+        defaults.set(Data("not json".utf8), forKey: "hotkey")
+        #expect(SettingsStore(defaults: defaults).hotkey == .default)
+    }
+
+    @Test func validStoredKeyCodeAtTheEdgesIsKept() throws {
+        for keyCode in [0, 127] {
+            let defaults = makeTestDefaults()
+            let stored = Hotkey(keyCode: keyCode, modifiers: [.control])
+            defaults.set(try JSONEncoder().encode(stored), forKey: "hotkey")
+            #expect(SettingsStore(defaults: defaults).hotkey == stored)
+        }
     }
 }

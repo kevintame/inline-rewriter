@@ -80,7 +80,7 @@ final class TransformationPickerViewModel: ObservableObject {
                 // URLSession reports cancellation as an error; a cancelled flow has no UI left to show it in.
                 guard !Task.isCancelled else { return }
                 isBusy = false
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+                errorMessage = error.localizedDescription
                 errorNeedsSettings = (error as? OpenAIError) == .missingAPIKey
             }
         }

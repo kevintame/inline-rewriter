@@ -22,19 +22,31 @@ final class OpenAIClient {
         return URLSession(configuration: config)
     }
 
+    /// Runs `prompt` against the provider saved in Settings.
+    ///
+    /// Settings are read here, on the main actor where the UI edits them, and passed on
+    /// as values. The Keychain read and the request then run off the main thread.
+    @MainActor
     func complete(prompt: String) async throws -> String {
         let config = settings.config(for: .openAI)
-        let apiKey = (try keychain.readString(account: ModelProviderID.openAI.keychainAccount) ?? "")
-        return try await send(prompt: prompt, config: config, apiKey: apiKey)
+        let instructions = settings.baseAIInstructions
+        return try await send(prompt: prompt, instructions: instructions, config: config, apiKey: nil)
     }
 
     /// Verifies that `config` and `apiKey` can complete a request, without saving either.
     /// Settings calls this with its unsaved draft so the user can check before committing.
+    @MainActor
     func testConnection(config: ModelProviderConfig, apiKey: String) async throws {
-        _ = try await send(prompt: "Reply with the single word OK.", config: config, apiKey: apiKey)
+        let instructions = settings.baseAIInstructions
+        _ = try await send(prompt: "Reply with the single word OK.", instructions: instructions, config: config, apiKey: apiKey)
     }
 
-    private func send(prompt: String, config: ModelProviderConfig, apiKey rawKey: String) async throws -> String {
+    /// `apiKey` of `nil` means "use the saved key".
+    private nonisolated func send(prompt: String,
+                                  instructions: String,
+                                  config: ModelProviderConfig,
+                                  apiKey suppliedKey: String?) async throws -> String {
+        let rawKey = try suppliedKey ?? keychain.readString(account: ModelProviderID.openAI.keychainAccount) ?? ""
         let apiKey = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else { throw OpenAIError.missingAPIKey }
 
@@ -53,7 +65,7 @@ final class OpenAIClient {
         let body = ChatCompletionsRequest(
             model: config.defaultModel,
             messages: [
-                .init(role: "system", content: settings.baseAIInstructions),
+                .init(role: "system", content: instructions),
                 .init(role: "user", content: prompt)
             ]
         )
@@ -64,21 +76,68 @@ final class OpenAIClient {
             (data, response) = try await session.data(for: request)
         } catch let error as URLError where error.code == .timedOut {
             throw OpenAIError.timeout
+        } catch let error as URLError where error.code != .cancelled {
+            // Offline, DNS, TLS, connection refused. Cancellation is left as it is so
+            // callers can tell a cancelled request from a failed one.
+            throw OpenAIError.network(Self.describe(error))
         }
 
         guard let http = response as? HTTPURLResponse else { throw OpenAIError.invalidResponse }
 
-        if !(200...299).contains(http.statusCode) {
-            if let apiError = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
-                throw OpenAIError.api(message: apiError.error.message)
+        // Some servers echo the submitted credential in their error text.
+        func providerMessage() -> String? {
+            (try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data))?
+                .message
+                .replacingOccurrences(of: apiKey, with: "[redacted]")
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            if let message = providerMessage() {
+                throw OpenAIError.api(message: message)
             }
             throw OpenAIError.http(status: http.statusCode)
         }
 
-        let decoded = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
-        let text = decoded.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let decoded = try? JSONDecoder().decode(ChatCompletionsResponse.self, from: data) else {
+            // A success status with an unexpected body: an error envelope from a proxy,
+            // an HTML page from a captive portal, a streamed reply.
+            if let message = providerMessage() {
+                throw OpenAIError.api(message: message)
+            }
+            throw OpenAIError.invalidResponse
+        }
+
+        let choice = decoded.choices.first
+        if choice?.finishReason == "content_filter" { throw OpenAIError.contentFiltered }
+
+        let text = choice?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if text.isEmpty { throw OpenAIError.emptyResult }
+
+        // A reply cut off by the token limit looks like a normal one. Replacing the
+        // selection with it would silently lose the end of the user's text.
+        if choice?.finishReason == "length" { throw OpenAIError.truncated }
         return text
+    }
+}
+
+private extension OpenAIClient {
+    /// A sentence for the failures a user can act on. `URLError.localizedDescription` is not
+    /// used: depending on how the error was produced it can be a raw domain-and-code dump.
+    static func describe(_ error: URLError) -> String {
+        switch error.code {
+        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
+            return "You appear to be offline."
+        case .cannotFindHost, .dnsLookupFailed:
+            return "The host could not be found. Check the host in Settings → Models."
+        case .cannotConnectToHost:
+            return "The server refused the connection. Check the host and port in Settings → Models."
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid, .clientCertificateRejected,
+             .clientCertificateRequired, .appTransportSecurityRequiresSecureConnection:
+            return "A secure connection could not be established."
+        default:
+            return "The request failed (network error \(error.code.rawValue))."
+        }
     }
 }
 
@@ -99,6 +158,13 @@ private struct ChatCompletionsResponse: Codable {
 
     struct Choice: Codable {
         let message: Message
+        /// Absent on some compatible servers; treated as a normal finish.
+        let finishReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case message
+            case finishReason = "finish_reason"
+        }
     }
 
     struct Message: Codable {
@@ -107,11 +173,21 @@ private struct ChatCompletionsResponse: Codable {
     }
 }
 
-private struct OpenAIErrorResponse: Codable {
-    let error: APIError
+/// Error envelope. OpenAI sends `{"error": {"message": "..."}}`; some compatible servers
+/// send `{"error": "..."}`.
+private struct OpenAIErrorResponse: Decodable {
+    let message: String
 
-    struct APIError: Codable {
-        let message: String
+    private enum CodingKeys: String, CodingKey { case error }
+    private struct APIError: Decodable { let message: String }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let detail = try? container.decode(APIError.self, forKey: .error) {
+            message = detail.message
+        } else {
+            message = try container.decode(String.self, forKey: .error)
+        }
     }
 }
 
@@ -124,7 +200,10 @@ enum OpenAIError: LocalizedError, Equatable {
     case api(message: String)
     case invalidResponse
     case emptyResult
+    case truncated
+    case contentFiltered
     case timeout
+    case network(String)
 
     var errorDescription: String? {
         switch self {
@@ -140,8 +219,14 @@ enum OpenAIError: LocalizedError, Equatable {
             return "Invalid response from OpenAI."
         case .emptyResult:
             return "OpenAI returned an empty result."
+        case .truncated:
+            return "The reply was cut off before it finished (length limit). Try a shorter selection or a model with a larger output limit."
+        case .contentFiltered:
+            return "The provider's content filter blocked the reply."
         case .timeout:
             return "Request timed out. Check your network connection and try again."
+        case .network(let reason):
+            return "Couldn't reach the server. \(reason)"
         }
     }
 }

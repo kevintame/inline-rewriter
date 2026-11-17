@@ -2,6 +2,10 @@ import Foundation
 import os.log
 
 /// App settings backed by UserDefaults.
+///
+/// Main-actor only: SwiftUI edits these on the main thread, so anything running elsewhere
+/// (a network request) must take a snapshot here first rather than read them directly.
+@MainActor
 final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Settings")
@@ -93,7 +97,10 @@ final class SettingsStore: ObservableObject {
 
     private static func loadHotkey(defaults: UserDefaults) -> Hotkey {
         guard let data = defaults.data(forKey: Keys.hotkey),
-              let hk = try? JSONDecoder().decode(Hotkey.self, from: data) else {
+              let hk = try? JSONDecoder().decode(Hotkey.self, from: data),
+              hk.hasValidKeyCode else {
+            // Missing, undecodable, or a key code no keyboard produces (hand-edited or
+            // corrupt defaults). Registering such a value must never be attempted.
             return .default
         }
         return hk

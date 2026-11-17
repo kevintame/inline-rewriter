@@ -3,6 +3,7 @@ import Testing
 @testable import InlineRewriterCore
 
 @Suite(.serialized)
+@MainActor
 struct OpenAIClientTests {
     private let apiKeyAccount = ModelProviderID.openAI.keychainAccount
 
@@ -164,5 +165,121 @@ struct OpenAIClientTests {
         await #expect(throws: OpenAIError.api(message: "Incorrect API key provided")) {
             try await client.testConnection(config: .defaultConfig(for: .openAI), apiKey: "sk-bad")
         }
+    }
+
+    // MARK: Failure handling
+
+    @Test func networkFailuresAreReadable() async {
+        let (client, _) = makeClient()
+
+        StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+        await #expect(throws: OpenAIError.network("You appear to be offline.")) {
+            try await client.complete(prompt: "x")
+        }
+
+        StubURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+        do {
+            _ = try await client.complete(prompt: "x")
+            Issue.record("expected a network error")
+        } catch {
+            #expect(error.localizedDescription.hasPrefix("Couldn't reach the server. The server refused the connection."))
+            #expect(!error.localizedDescription.contains("NSURLErrorDomain"))
+        }
+    }
+
+    @Test func cancellationIsNotReportedAsANetworkFailure() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = { _ in throw URLError(.cancelled) }
+
+        do {
+            _ = try await client.complete(prompt: "x")
+            Issue.record("expected cancellation")
+        } catch {
+            #expect((error as? URLError)?.code == .cancelled)
+        }
+    }
+
+    @Test(arguments: [
+        "<html><body>Sign in to the network</body></html>",
+        #"{"unexpected":true}"#,
+        #"{"choices":"nope"}"#,
+        #"{"choices":[{"message":{"content":["an","array"]}}]}"#,
+        "",
+    ])
+    func malformedSuccessBodyIsAnInvalidResponse(body: String) async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: body)
+
+        await #expect(throws: OpenAIError.invalidResponse) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test func errorEnvelopeWithSuccessStatusIsSurfaced() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: #"{"error":{"message":"Model overloaded"}}"#)
+
+        await #expect(throws: OpenAIError.api(message: "Model overloaded")) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test func plainStringErrorEnvelopeIsSurfaced() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 404, json: #"{"error":"model 'nope' not found"}"#)
+
+        await #expect(throws: OpenAIError.api(message: "model 'nope' not found")) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test func emptyChoicesIsAnEmptyResult() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: #"{"choices":[]}"#)
+
+        await #expect(throws: OpenAIError.emptyResult) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test func submittedKeyIsRedactedFromProviderErrors() async {
+        let (client, _) = makeClient(apiKey: "sk-synthetic-test-key")
+        StubURLProtocol.handler = respond(status: 401, json: #"{"error":{"message":"Incorrect API key provided: sk-synthetic-test-key."}}"#)
+
+        await #expect(throws: OpenAIError.api(message: "Incorrect API key provided: [redacted].")) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    // MARK: Finish reason
+
+    @Test func truncatedReplyIsRejected() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: #"{"choices":[{"message":{"content":"Half a sent"},"finish_reason":"length"}]}"#)
+
+        await #expect(throws: OpenAIError.truncated) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test func contentFilteredReplyIsRejected() async {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: #"{"choices":[{"message":{"content":null},"finish_reason":"content_filter"}]}"#)
+
+        await #expect(throws: OpenAIError.contentFiltered) {
+            try await client.complete(prompt: "x")
+        }
+    }
+
+    @Test(arguments: [
+        #"{"choices":[{"message":{"content":"Done."},"finish_reason":"stop"}]}"#,
+        #"{"choices":[{"message":{"content":"Done."},"finish_reason":null}]}"#,
+        #"{"choices":[{"message":{"content":"Done."}}]}"#,
+    ])
+    func completeReplyIsAcceptedWithOrWithoutFinishReason(body: String) async throws {
+        let (client, _) = makeClient()
+        StubURLProtocol.handler = respond(status: 200, json: body)
+
+        #expect(try await client.complete(prompt: "x") == "Done.")
     }
 }
