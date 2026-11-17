@@ -38,7 +38,7 @@ final class HotkeyManager {
         var errorDescription: String? {
             switch self {
             case .invalidShortcut(let hotkey):
-                return "The shortcut \(hotkey.displayString) must include ⌘, ⌥, or ⌃. Change it in Settings."
+                return "The shortcut \(hotkey.displayString) can't be used as a global shortcut. It must be a real key combined with ⌘, ⌥, or ⌃. Change it in Settings."
             case .handlerInstallFailed(let status):
                 return "Could not install the hotkey event handler (status \(status))."
             case .registrationFailed(let hotkey, _):
@@ -52,7 +52,7 @@ final class HotkeyManager {
         stop()
 
         let hotkey = settings.hotkey
-        guard hotkey.isValidGlobalShortcut else {
+        guard hotkey.isValidGlobalShortcut, let keyCode = UInt32(exactly: hotkey.keyCode) else {
             throw RegistrationError.invalidShortcut(hotkey)
         }
 
@@ -61,7 +61,7 @@ final class HotkeyManager {
         var ref: EventHotKeyRef?
         let id = EventHotKeyID(signature: Self.signature, id: Self.hotKeyID)
         let status = RegisterEventHotKey(
-            UInt32(hotkey.keyCode),
+            keyCode,
             hotkey.carbonModifiers,
             id,
             GetApplicationEventTarget(),

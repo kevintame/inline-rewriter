@@ -51,9 +51,16 @@ extension Hotkey {
     /// include ⌘, ⌥, or ⌃ unless it is a function key. Otherwise a bare letter or ⇧+letter
     /// would break ordinary typing in every app.
     var isValidGlobalShortcut: Bool {
+        guard hasValidKeyCode else { return false }
         if Self.functionKeyCodes.contains(keyCode) { return true }
         return modifiers.contains { $0 == .command || $0 == .option || $0 == .control }
     }
+
+    /// macOS virtual key codes fit in 0...127. The value is persisted as a plain `Int`, so
+    /// it has to be checked before it is converted for Carbon.
+    var hasValidKeyCode: Bool { Self.validKeyCodes.contains(keyCode) }
+
+    static let validKeyCodes = 0...127
 
     static let functionKeyCodes: Set<Int> = [
         kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6,

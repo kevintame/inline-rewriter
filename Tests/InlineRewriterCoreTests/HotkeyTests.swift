@@ -50,4 +50,21 @@ struct HotkeyTests {
         let decoded = try JSONDecoder().decode(Hotkey.self, from: data)
         #expect(decoded == hk)
     }
+
+    @Test(arguments: [-1, 128, Int.max, Int.min])
+    func outOfRangeKeyCodeIsNeverAValidGlobalShortcut(keyCode: Int) {
+        let hk = Hotkey(keyCode: keyCode, modifiers: [.command, .option])
+        #expect(!hk.hasValidKeyCode)
+        #expect(!hk.isValidGlobalShortcut)
+    }
+
+    @Test @MainActor func registeringAnOutOfRangeKeyCodeThrowsInsteadOfTrapping() {
+        let settings = SettingsStore(defaults: makeTestDefaults())
+        settings.hotkey = Hotkey(keyCode: -1, modifiers: [.command])
+        let manager = HotkeyManager(settings: settings)
+
+        #expect(throws: HotkeyManager.RegistrationError.self) {
+            try manager.start()
+        }
+    }
 }
