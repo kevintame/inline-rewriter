@@ -21,6 +21,9 @@ private struct RewritePanelChrome<Content: View>: View {
             content
             ScrollView(.vertical) { content }
         }
+        // Always the content's own width; a greedy row must not stretch the panel across
+        // the display.
+        .fixedSize(horizontal: true, vertical: false)
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(Self.shape)
         .overlay(Self.shape.strokeBorder(Color.primary.opacity(0.15)))
@@ -42,6 +45,10 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
 
     private let panel: RewritePanel
     private var screen: NSScreen?
+    /// Owns the SwiftUI content. Its view is installed as the panel's content view rather
+    /// than through `contentViewController`, so the panel's frame is set only here and
+    /// AppKit does not also resize the window behind our back.
+    private var hosting: HostingController?
     private var sizeObservation: NSKeyValueObservation?
     /// Set while this controller hides the panel itself, so that is not reported as a
     /// dismissal by the user.
@@ -89,7 +96,8 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
         hosting.sizingOptions = [.preferredContentSize]
 
         sizeObservation = nil
-        panel.contentViewController = hosting
+        self.hosting = hosting
+        panel.contentView = hosting.view
         sizeObservation = hosting.observe(\.preferredContentSize) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.pinToCorner()
@@ -113,14 +121,16 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
         defer { isClosing = false }
         sizeObservation = nil
         panel.orderOut(nil)
-        panel.contentViewController = nil
+        // Dropping the content tears down the SwiftUI views and anything they installed.
+        panel.contentView = NSView()
+        hosting = nil
     }
 
     /// Sizes the panel to its content and pins it to the upper-right corner of the display.
     /// Returns false when there is no content or no display to place it on.
     @discardableResult
     private func pinToCorner() -> Bool {
-        guard let hosting = panel.contentViewController as? HostingController else { return false }
+        guard let hosting else { return false }
 
         // The display can go away mid-session (unplugged, lid closed).
         if let current = screen, !NSScreen.screens.contains(current) {
@@ -149,12 +159,6 @@ final class RewritePanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - NSWindowDelegate
-
-    func windowDidResize(_ notification: Notification) {
-        // AppKit resizes the window around its own idea of the origin when the content
-        // changes size; put it back in the corner.
-        pinToCorner()
-    }
 
     func windowDidResignKey(_ notification: Notification) {
         guard !isClosing, panel.isVisible else { return }
