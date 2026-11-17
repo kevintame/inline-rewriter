@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Popover view listing transformations.
+/// Lists the prompts for the captured text. Shown first when the shortcut is pressed.
 struct TransformationPickerView: View {
     @ObservedObject var viewModel: TransformationPickerViewModel
     @State private var eventMonitor: Any?
-    @State private var listContentHeight: CGFloat = 0
 
     private static let width: CGFloat = 420
-    private static let maxListHeight: CGFloat = 240
+    /// Up to this many prompts are laid out at their natural height, so the panel is
+    /// exactly as tall as its content. Longer lists scroll in a fixed-height area.
+    private static let maxUnscrolledRows = 5
+    private static let scrollingListHeight: CGFloat = 300
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -54,29 +56,7 @@ struct TransformationPickerView: View {
                 }
             }
 
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(Array(viewModel.transformations.enumerated()), id: \.element.id) { index, transformation in
-                        TransformationRow(
-                            transformation: transformation,
-                            shortcutNumber: index < 9 ? index + 1 : nil,
-                            isSelected: index == viewModel.selectedIndex,
-                            isDisabled: viewModel.isBusy,
-                            onHover: { viewModel.selectedIndex = index },
-                            action: { viewModel.run(at: index) }
-                        )
-                    }
-                }
-                .padding(.vertical, 4)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: ListContentHeightKey.self, value: proxy.size.height)
-                    }
-                )
-            }
-            .onPreferenceChange(ListContentHeightKey.self) { listContentHeight = $0 }
-            // Size to the rows, scrolling only once they outgrow the cap.
-            .frame(width: Self.width, height: min(max(listContentHeight, 44), Self.maxListHeight))
+            list
         }
         .padding(14)
         .onAppear {
@@ -117,12 +97,31 @@ struct TransformationPickerView: View {
             }
         }
     }
-}
 
-private struct ListContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    @ViewBuilder
+    private var list: some View {
+        if viewModel.transformations.count <= Self.maxUnscrolledRows {
+            rows.frame(width: Self.width)
+        } else {
+            ScrollView { rows }
+                .frame(width: Self.width, height: Self.scrollingListHeight)
+        }
+    }
+
+    private var rows: some View {
+        VStack(spacing: 4) {
+            ForEach(Array(viewModel.transformations.enumerated()), id: \.element.id) { index, transformation in
+                TransformationRow(
+                    transformation: transformation,
+                    shortcutNumber: index < 9 ? index + 1 : nil,
+                    isSelected: index == viewModel.selectedIndex,
+                    isDisabled: viewModel.isBusy,
+                    onHover: { viewModel.selectedIndex = index },
+                    action: { viewModel.run(at: index) }
+                )
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
