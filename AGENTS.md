@@ -13,7 +13,7 @@ swift test               # Command Line Tools are enough
 scripts/build-dmg.sh     # needs full Xcode
 ```
 
-Build and run from Xcode 16 or later, then exercise shortcut, picker, preview, replace and cancel. Confirm the clipboard is restored after both replace and cancel.
+Build and run from Xcode 16 or later, then exercise shortcut, picker, preview, replace and cancel. Confirm the clipboard is restored after both replace and cancel. A replace that fails must not restore it: the preview reopens with the result and the error, and the rewritten text stays on the clipboard.
 
 ## Layout
 

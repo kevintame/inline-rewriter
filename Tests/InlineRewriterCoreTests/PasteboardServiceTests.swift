@@ -294,7 +294,7 @@ struct PasteboardServiceTests {
         #expect(h.clipboard == "copied during activation")
     }
 
-    @Test func failedReplaceLeavesANewerCopyAlone() async throws {
+    @Test func failedReplaceKeepsTheResultEvenOverANewerCopy() async throws {
         let h = PasteboardHarness()
         h.setClipboard("original")
         let service = h.makeService()
@@ -305,7 +305,7 @@ struct PasteboardServiceTests {
         await #expect(throws: PBError.targetApplicationTerminated) {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
-        #expect(h.clipboard == "copied during the preview")
+        #expect(h.clipboard == "rewritten")
         #expect(!service.hasPendingTransaction)
     }
 
@@ -337,7 +337,7 @@ struct PasteboardServiceTests {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
         #expect(h.pastes.isEmpty)
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
         #expect(!service.hasPendingTransaction)
     }
 
@@ -353,10 +353,10 @@ struct PasteboardServiceTests {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
         #expect(h.pastes.isEmpty)
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
     }
 
-    @Test func replaceFailuresRestoreTheClipboard() async throws {
+    @Test func replaceFailuresLeaveTheResultOnTheClipboard() async throws {
         // Permission revoked while the preview was up.
         var h = PasteboardHarness()
         h.setClipboard("original")
@@ -366,7 +366,7 @@ struct PasteboardServiceTests {
         await #expect(throws: PBError.accessibilityPermissionRequired) {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
 
         // Target app quit.
         h = PasteboardHarness()
@@ -377,7 +377,7 @@ struct PasteboardServiceTests {
         await #expect(throws: PBError.targetApplicationTerminated) {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
 
         // No target at all.
         h = PasteboardHarness()
@@ -387,7 +387,7 @@ struct PasteboardServiceTests {
         await #expect(throws: PBError.noTargetApplication) {
             try await service.replaceSelection(with: "rewritten", in: nil)
         }
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
 
         // Event creation fails after the result is already on the clipboard.
         h = PasteboardHarness()
@@ -398,22 +398,51 @@ struct PasteboardServiceTests {
         await #expect(throws: PBError.cgEventCreationFailed) {
             try await service.replaceSelection(with: "rewritten", in: h.target)
         }
-        #expect(h.clipboard == "original")
+        #expect(h.clipboard == "rewritten")
         #expect(!service.hasPendingTransaction)
     }
 
-    @Test func cancellationAfterPasteStillRestoresClipboard() async throws {
+    @Test func interruptedWaitAfterThePasteIsNotAFailure() async throws {
         let h = PasteboardHarness()
         h.setClipboard("original")
         let service = h.makeService()
         _ = try await service.captureSelection(from: h.target)
 
         h.onSleep = { if !h.pastes.isEmpty { throw CancellationError() } }
-        await #expect(throws: CancellationError.self) {
-            try await service.replaceSelection(with: "rewritten", in: h.target)
-        }
+        try await service.replaceSelection(with: "rewritten", in: h.target)
         #expect(h.pastes == ["rewritten"])
         #expect(h.clipboard == "original")
+        #expect(!service.hasPendingTransaction)
+    }
+
+    @Test func aFailedReplaceCanBeTriedAgain() async throws {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+        _ = try await service.captureSelection(from: h.target)
+
+        h.frontmost = 1
+        await #expect(throws: PBError.targetApplicationNotFrontmost) {
+            try await service.replaceSelection(with: "rewritten", in: h.target)
+        }
+        #expect(h.clipboard == "rewritten")
+
+        // Cancelling after the failure must not bring the old clipboard back.
+        service.restoreClipboard()
+        #expect(h.clipboard == "rewritten")
+
+        // A second attempt pastes, and the result stays on the clipboard.
+        h.frontmost = h.targetPID
+        try await service.replaceSelection(with: "rewritten, edited", in: h.target)
+        #expect(h.pastes == ["rewritten, edited"])
+        #expect(h.clipboard == "rewritten")
+        #expect(!service.hasPendingTransaction)
+    }
+
+    @Test func replaceFailureMessageSaysWhereTheResultIs() {
+        let message = PasteboardService.replaceFailureMessage(for: PBError.targetApplicationTerminated)
+        #expect(message.hasPrefix("The application you were working in has quit."))
+        #expect(message.contains("on the clipboard"))
     }
 
     @Test func aSecondCaptureDoesNotLoseTheFirstBackup() async throws {

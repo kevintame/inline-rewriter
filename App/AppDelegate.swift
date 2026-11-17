@@ -245,9 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.showPicker(for: session)
             session.pickerViewModel.run(transformation)
         }
-        viewModel.onReplace = { [weak self, weak session] text in
-            guard let self, let session, self.session === session else { return }
-            self.replace(output: text, session: session)
+        viewModel.onReplace = { [weak self, weak session, weak viewModel] text in
+            guard let self, let session, let viewModel, self.session === session else { return }
+            self.replace(output: text, session: session, preview: viewModel)
         }
         viewModel.onCopy = { [weak self, weak session] text in
             guard let self, let session, self.session === session else { return }
@@ -256,15 +256,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.container.pasteboardService.keepOnClipboard(text)
         }
 
+        showPreview(viewModel, for: session)
+    }
+
+    private func showPreview(_ viewModel: PreviewViewModel, for session: RewriteSession) {
         present(PreviewView(viewModel: viewModel), for: session) { [weak viewModel] event in
             viewModel?.handleKeyDown(event) ?? false
         }
     }
 
-    private func replace(output: String, session: RewriteSession) {
-        // The session is over from the flow's point of view; clearing it first means
-        // closing the panel does not restore the clipboard under us.
-        self.session = nil
+    private func replace(output: String, session: RewriteSession, preview: PreviewViewModel) {
+        // The panel has to go so the target app can take focus. The session stays, so a
+        // failed paste can bring the preview back with the result still in it; `isBusy`
+        // keeps the shortcut from starting anything in the meantime.
         requestInFlight = false
         isBusy = true
         panelController.close()
@@ -274,10 +278,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Give macOS a moment to finish dismissing the panel and hand focus back.
             try? await Task.sleep(nanoseconds: 200_000_000)
             do {
-                // Hands the clipboard back itself, whether or not the paste goes through.
+                // Hands the clipboard back itself once the paste is posted.
                 try await container.pasteboardService.replaceSelection(with: output, in: session.target)
+                if self.session === session {
+                    endSession(restoreClipboard: false)
+                }
             } catch {
-                presentError(error, fallbackTitle: "Replace failed")
+                // The session is gone if the app is quitting; nothing to show then.
+                guard self.session === session else { return }
+                logger.error("Replace failed: \(error.localizedDescription)")
+                // The service left the result on the clipboard instead of restoring the
+                // old contents. Reopen the preview with the text as the user left it.
+                preview.errorMessage = PasteboardService.replaceFailureMessage(for: error)
+                showPreview(preview, for: session)
             }
         }
     }

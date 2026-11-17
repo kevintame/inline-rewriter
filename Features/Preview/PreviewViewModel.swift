@@ -8,6 +8,10 @@ final class PreviewViewModel: ObservableObject {
     /// Editable so a one-word fix does not need another round trip to the model.
     @Published var outputText: String
 
+    /// Why the last Replace did not go through. The panel stays up with the result so it
+    /// is not lost.
+    @Published var errorMessage: String?
+
     var onCancel: (() -> Void)?
     var onRetry: (() -> Void)?
     /// Receives the text as it stands when the user commits, including any edits.
@@ -54,6 +58,7 @@ final class PreviewViewModel: ObservableObject {
 
     func replace() {
         guard !isOutputEmpty else { return }
+        errorMessage = nil
         onReplace?(outputText)
     }
 

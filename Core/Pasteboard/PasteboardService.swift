@@ -68,7 +68,11 @@ extension NSPasteboard: ClipboardAccess {
 /// over the clipboard and ends when the user's clipboard is handed back, by
 /// `replaceSelection`, `restoreClipboard`, `keepOnClipboard`, or a failure. The rules:
 ///
-/// - Every way out of a capture or a replace hands the clipboard back, including errors.
+/// - Every way out of a capture hands the clipboard back, including errors, and so does a
+///   replace that pastes.
+/// - A replace that fails leaves the rewritten text on the clipboard instead: by then the
+///   result is worth more to the user than what they had copied before, and they can paste
+///   it by hand.
 /// - The backup is only written back while the clipboard still holds what this service put
 ///   there. If anything newer was copied in the meantime, the newer contents win. The one
 ///   window this cannot cover is the fraction of a second in which the target app answers
@@ -259,18 +263,35 @@ final class PasteboardService {
     // MARK: - Replace
 
     /// Puts `text` on the clipboard, pastes into `target`, then hands the clipboard back.
-    /// The clipboard is handed back on every failure too, and nothing is pasted unless
-    /// `target` is confirmed frontmost.
+    /// Nothing is pasted unless `target` is confirmed frontmost.
+    ///
+    /// If this throws, nothing was pasted, the transaction is over and `text` is left on
+    /// the clipboard so the user can paste it by hand; the earlier clipboard contents are
+    /// not restored. The exception is a transaction ended from outside while this was
+    /// waiting (the app is quitting): the clipboard was handed back then and stays as it is.
     func replaceSelection(with text: String, in target: Target?) async throws {
         let id = transaction?.id
             ?? beginTransaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount, isCapturing: false)
-        // Covers every exit below. Before the payload is written this is a no-op unless the
-        // clipboard still holds the captured selection. It never ends a different, later
-        // transaction.
-        defer {
-            if transaction?.id == id { restoreClipboard() }
+        do {
+            try await paste(text, into: target, transactionID: id)
+        } catch {
+            // Never ends a different, later transaction.
+            if transaction?.id == id {
+                logger.info("Replace failed; leaving the result on the clipboard")
+                keepOnClipboard(text)
+            }
+            throw error
         }
+        if transaction?.id == id { restoreClipboard() }
+    }
 
+    /// Text to show when `replaceSelection` failed with `error`: what went wrong, and where
+    /// the result is now.
+    static func replaceFailureMessage(for error: Error) -> String {
+        "\(error.localizedDescription) The rewritten text is on the clipboard, so you can paste it yourself with ⌘V."
+    }
+
+    private func paste(_ text: String, into target: Target?, transactionID id: Int) async throws {
         guard environment.isAccessibilityTrusted() else {
             throw PasteboardError.accessibilityPermissionRequired
         }
@@ -303,7 +324,8 @@ final class PasteboardService {
         try environment.postCommandKey(VirtualKey.v)
         logger.info("Posted paste (\(text.count) chars)")
 
-        try await environment.sleep(Timing.pasteSettle)
+        // The paste is on its way, so an interrupted wait is not a failed replace.
+        try? await environment.sleep(Timing.pasteSettle)
     }
 
     // MARK: - Ending a transaction
@@ -324,7 +346,7 @@ final class PasteboardService {
     }
 
     /// Ends the transaction by leaving `text` on the clipboard instead of restoring the
-    /// backup (the preview's Copy button).
+    /// backup (the preview's Copy button, and a replace that failed).
     func keepOnClipboard(_ text: String) {
         transaction = nil
         pasteboard.setString(text)

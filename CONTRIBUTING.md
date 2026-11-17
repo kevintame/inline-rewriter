@@ -10,7 +10,8 @@
 1. Make the change. Keep `Core/` free of SwiftUI so it stays testable from SwiftPM.
 2. Run `swift test`. Add or update tests in `Tests/InlineRewriterCoreTests` for anything in `Core/`.
 3. Build and run from Xcode and exercise the flow end to end: shortcut, picker, preview, replace, cancel.
-   Check the clipboard is restored after both replace and cancel.
+   Check the clipboard is restored after both replace and cancel, and that a failed replace
+   (quit the target app while the preview is up) reopens the preview with the result on the clipboard.
 4. If you add a Swift file, add it to the Xcode target. The SwiftPM package picks up `Core/` automatically.
 
 ## Things that are easy to break

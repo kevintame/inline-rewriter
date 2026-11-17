@@ -37,6 +37,16 @@ struct PreviewView: View {
                 .frame(height: showOriginal ? 170 : 260)
                 .border(Color.secondary.opacity(0.3))
 
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .lineLimit(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+
             HStack {
                 Button("Cancel") { viewModel.cancel() }
                     .keyboardShortcut(.cancelAction)
