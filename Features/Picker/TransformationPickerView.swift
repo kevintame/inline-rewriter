@@ -43,10 +43,14 @@ struct TransformationPickerView: View {
 
             if let error = viewModel.errorMessage {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // Wraps within the panel's width; a long provider message must not
+                    // stretch the panel or push the buttons off its edge.
                     Text(error)
                         .foregroundStyle(.red)
                         .font(.caption)
+                        .lineLimit(8)
                         .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                     if viewModel.errorNeedsSettings {
                         Spacer(minLength: 0)
                         Button("Open Settings…") { viewModel.openSettings() }
@@ -57,16 +61,18 @@ struct TransformationPickerView: View {
 
             list
         }
+        // One fixed width for the whole picker, so nothing in it can widen the panel.
+        .frame(width: Self.width)
         .padding(14)
     }
 
     @ViewBuilder
     private var list: some View {
         if viewModel.transformations.count <= Self.maxUnscrolledRows {
-            rows.frame(width: Self.width)
+            rows
         } else {
             ScrollView { rows }
-                .frame(width: Self.width, height: Self.scrollingListHeight)
+                .frame(height: Self.scrollingListHeight)
         }
     }
 

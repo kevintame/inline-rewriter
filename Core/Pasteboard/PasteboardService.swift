@@ -70,7 +70,9 @@ extension NSPasteboard: ClipboardAccess {
 ///
 /// - Every way out of a capture or a replace hands the clipboard back, including errors.
 /// - The backup is only written back while the clipboard still holds what this service put
-///   there. If anything newer was copied in the meantime, the newer contents win.
+///   there. If anything newer was copied in the meantime, the newer contents win. The one
+///   window this cannot cover is the fraction of a second in which the target app answers
+///   ⌘C or reads ⌘V: a change made then is indistinguishable from the app's own.
 /// - A synthetic keystroke is only posted while the intended app is frontmost.
 @MainActor
 final class PasteboardService {
@@ -229,8 +231,10 @@ final class PasteboardService {
             logger.info("Captured selection (\(text.count) chars)")
             return text
         } catch {
-            // Whatever is on the clipboard now is there because of the ⌘C just posted
-            // (possibly a non-text copy), so the user's own contents go back regardless.
+            // Any change since the clipboard was cleared is attributed to the ⌘C just
+            // posted (possibly a non-text copy), so the user's own contents go back.
+            // Known limit: a copy made by another app inside this half-second window
+            // cannot be told apart from the target app's and is replaced by the backup.
             logger.info("Capture failed; restoring clipboard")
             transaction?.ownedChangeCount = pasteboard.changeCount
             restoreClipboard()
@@ -244,14 +248,11 @@ final class PasteboardService {
     /// The clipboard is handed back on every failure too, and nothing is pasted unless
     /// `target` is confirmed frontmost.
     func replaceSelection(with text: String, in target: Target?) async throws {
-        var active = transaction ?? Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
-        if pasteboard.changeCount != active.ownedChangeCount {
-            // Something newer was copied while the preview was up. That is what must
-            // survive the paste, not the older backup.
-            logger.info("Clipboard changed during the session; preserving the newer contents")
-            active = Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
+        if transaction == nil {
+            transaction = Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
         }
-        transaction = active
+        // Covers every exit below. Before the payload is written this is a no-op unless the
+        // clipboard still holds the captured selection.
         defer { restoreClipboard() }
 
         guard environment.isAccessibilityTrusted() else {
@@ -269,6 +270,13 @@ final class PasteboardService {
         try requireFrontmost(target)
         try await environment.sleep(Timing.activationSettle)
 
+        // Checked after the waits, right before taking the clipboard over again: if
+        // something newer was copied while the preview was up or while the target app was
+        // coming forward, that is what must survive the paste, not the older backup.
+        if let active = transaction, pasteboard.changeCount != active.ownedChangeCount {
+            logger.info("Clipboard changed during the session; preserving the newer contents")
+            transaction = Transaction(backup: pasteboard.snapshot(), ownedChangeCount: pasteboard.changeCount)
+        }
         pasteboard.setString(text)
         transaction?.ownedChangeCount = pasteboard.changeCount
 

@@ -276,6 +276,39 @@ struct PasteboardServiceTests {
         #expect(h.clipboard == "copied during the preview")
     }
 
+    @Test func replacePreservesACopyMadeWhileTheTargetWasComingForward() async throws {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+        _ = try await service.captureSelection(from: h.target)
+
+        // Another app writes to the clipboard during the activation wait.
+        var sleeps = 0
+        h.onSleep = {
+            sleeps += 1
+            if sleeps == 1 { h.setClipboard("copied during activation") }
+        }
+        try await service.replaceSelection(with: "rewritten", in: h.target)
+
+        #expect(h.pastes == ["rewritten"])
+        #expect(h.clipboard == "copied during activation")
+    }
+
+    @Test func failedReplaceLeavesANewerCopyAlone() async throws {
+        let h = PasteboardHarness()
+        h.setClipboard("original")
+        let service = h.makeService()
+        _ = try await service.captureSelection(from: h.target)
+
+        h.setClipboard("copied during the preview")
+        h.terminated = true
+        await #expect(throws: PBError.targetApplicationTerminated) {
+            try await service.replaceSelection(with: "rewritten", in: h.target)
+        }
+        #expect(h.clipboard == "copied during the preview")
+        #expect(!service.hasPendingTransaction)
+    }
+
     @Test func replaceWaitsForTheTargetToComeToTheFront() async throws {
         let h = PasteboardHarness()
         h.setClipboard("original")
